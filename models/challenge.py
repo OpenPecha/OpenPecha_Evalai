@@ -3,8 +3,13 @@ from sqlalchemy.dialects.postgresql import UUID
 from database import Base
 import datetime
 import uuid
+from sqlalchemy.orm import relationship
 
 class Challenge(Base):
+    """
+    This table refers to a specific challenge Card which will be layed out on frontend.
+    e.g name of cards - Tibetan OCR, Tibetan STT, Tibetan ASR, Tibetan TTS, Tibetan MT etc.
+    """
     __tablename__ = "challenge"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
@@ -23,3 +28,6 @@ class Challenge(Base):
     # this status is an optional field but i might chane it later. as a status is must to explain what the challenge is about.
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc))
     updated_at = Column(DateTime, nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
+
+    # Relationship to Category
+    category = relationship("Category", back_populates="challenges")

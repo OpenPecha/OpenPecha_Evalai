@@ -9,7 +9,7 @@ router = APIRouter(prefix="/results", tags=["results"])
 
 db_dependency = Annotated[Session, Depends(get_db)]
 
-@router.get("/", response_model=List[ResultRead])
+@router.get("", response_model=List[ResultRead])
 async def list_all_results(db: db_dependency):
     try:
         return db.query(models.Result).all()

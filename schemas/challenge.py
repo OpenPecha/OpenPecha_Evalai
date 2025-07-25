@@ -1,7 +1,8 @@
 import uuid
 import datetime
 from pydantic import BaseModel
-from typing import Optional, Any
+from typing import Optional
+from schemas.category import CategoryRead
 
 class ChallengeBase(BaseModel):
     title: str
@@ -28,6 +29,12 @@ class ChallengeRead(ChallengeBase):
     id: uuid.UUID
     created_at: datetime.datetime
     updated_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+class ChallengeWithCategoryRead(ChallengeRead):
+    category: CategoryRead
 
     class Config:
         from_attributes = True

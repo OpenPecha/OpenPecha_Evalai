@@ -18,6 +18,6 @@ class Result(Base):
     submission_id = Column(UUID(as_uuid=True), ForeignKey("submission.id"), nullable=False, index=True)
     score = Column(Float, nullable=False)
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc))
-    created_by = Column(String, nullable=False)
+    created_by = Column(String, nullable=False) # not needed
     updated_at = Column(DateTime, nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
-    updated_by = Column(String, nullable=False)
+    updated_by = Column(String, nullable=False) # not needed

@@ -3,19 +3,30 @@ from typing import Annotated, List
 from sqlalchemy.orm import Session
 from models import Challenge
 from database import get_db
-from schemas.challenge import ChallengeCreate, ChallengeRead, ChallengeUpdate
+from schemas.challenge import ChallengeCreate, ChallengeRead, ChallengeUpdate, ChallengeWithCategoryRead
 from uuid import UUID
+from sqlalchemy.orm import joinedload
+
 
 router = APIRouter(prefix="/challenges", tags=["challenges"])
 
 db_dependency = Annotated[Session, Depends(get_db)]
 
-@router.get("/list", response_model=List[ChallengeRead])
-async def list_all_challenges(db: db_dependency):
+# for listing all challenges
+
+
+
+@router.get("/list", response_model=List[ChallengeWithCategoryRead])
+async def list_challenges_with_category(db: db_dependency):
     try:
-        return db.query(Challenge).all()
+        # Eager load the category relationship
+        challenges = db.query(Challenge).options(joinedload(Challenge.category)).all()
+        return challenges
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# for getting a specific challenge
 
 @router.get("/{challenge_id}", response_model=ChallengeRead)
 async def get_challenge(db: db_dependency, challenge_id: UUID = Path(..., description="This is the ID of the challenge")):
@@ -23,6 +34,8 @@ async def get_challenge(db: db_dependency, challenge_id: UUID = Path(..., descri
     if not challenge:
         raise HTTPException(status_code=404, detail="Challenge not found")
     return challenge
+
+# for creating a new challenge
 
 @router.post("/create", response_model=ChallengeRead, status_code=status.HTTP_201_CREATED)
 async def create_new_challenge(
@@ -50,6 +63,8 @@ async def create_new_challenge(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# for updating a challenge
+
 @router.patch("/{challenge_id}", response_model=ChallengeRead, status_code=status.HTTP_200_OK)
 async def update_challenge(
     db: db_dependency,
@@ -66,7 +81,9 @@ async def update_challenge(
     db.refresh(challenge)
     return challenge
 
-@router.delete("/{challenge_id}", status_code=status.HTTP_204_NO_CONTENT)
+# for deleting a challenge
+
+@router.delete("/{challenge_id}", status_code=status.HTTP_200_OK)
 async def delete_challenge(db: db_dependency, challenge_id: UUID = Path(..., description="This is the ID of the challenge to delete")):
     challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
     if not challenge:
