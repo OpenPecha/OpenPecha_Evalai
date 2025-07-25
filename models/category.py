@@ -3,6 +3,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from database import Base
 import datetime
 import uuid
+from sqlalchemy.orm import relationship
 
 class Category(Base):
     """
@@ -16,3 +17,6 @@ class Category(Base):
     created_by = Column(String, nullable=False)
     updated_at = Column(DateTime, nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
     updated_by = Column(String, nullable=False)
+    
+    # Relationship to Challenge
+    challenges = relationship("Challenge", back_populates="category")

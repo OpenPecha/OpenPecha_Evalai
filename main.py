@@ -19,7 +19,7 @@ create_table()
 
 app.include_router(user.router)
 app.include_router(category.router)
+app.include_router(model.router)
 app.include_router(challenge.router)
 app.include_router(submission.router)
 app.include_router(result.router)
-# app.include_router(model.router)

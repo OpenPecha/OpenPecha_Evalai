@@ -12,7 +12,7 @@ db_dependency = Annotated[Session, Depends(get_db)]
 
 # for listing all categories
 
-@router.get("/", response_model=List[CategoryRead], status_code=status.HTTP_200_OK)
+@router.get("", response_model=List[CategoryRead], status_code=status.HTTP_200_OK)
 async def list_all_categories(db: db_dependency):
     try:
         return db.query(Category).all()
@@ -30,7 +30,7 @@ async def get_category(db: db_dependency, category_id: UUID = Path(..., descript
 
 # for creating new category
 
-@router.post("/create/", response_model=CategoryRead, status_code=status.HTTP_201_CREATED)
+@router.post("/create", response_model=CategoryRead, status_code=status.HTTP_201_CREATED)
 async def create_new_category(db: db_dependency, category: CategoryCreate = Body(..., description="The category details for creating a new category.", example={
     "name": "OCR",
     "created_by": "admin",

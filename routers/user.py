@@ -14,7 +14,7 @@ db_dependency = Annotated[Session, Depends(get_db)]
 
 # for listing all users
 
-@router.get("/", response_model=List[UserRead], status_code=status.HTTP_200_OK)
+@router.get("", response_model=List[UserRead], status_code=status.HTTP_200_OK)
 async def list_all_users(db: db_dependency):
     try:
         return db.query(User).all()
@@ -30,7 +30,7 @@ async def get_user(db: db_dependency, user_id: uuid.UUID = Path(..., description
 
 # for creating new user
 
-@router.post("/create/", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@router.post("/create", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 async def create_new_user(db: db_dependency, user: UserCreate = Body(
         ..., 
         description="The user details for creating a new user.",
@@ -42,6 +42,9 @@ async def create_new_user(db: db_dependency, user: UserCreate = Body(
             "role": "admin"
         }
     )):
+    existing_user = db.query(User).filter(User.email == user.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="User with this email already exists")
     try:
         user_instance = User(**user.model_dump())
         db.add(user_instance)
@@ -50,18 +53,15 @@ async def create_new_user(db: db_dependency, user: UserCreate = Body(
         return user_instance
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="an error occurred while creating the user: " + str(e))
 
 # for deleting user
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{user_id}", status_code=status.HTTP_200_OK)
 async def delete_user(db: db_dependency, user_id: uuid.UUID = Path(..., description="This is the ID of the user")):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    hosted_challenges = db.query(Challenge).filter(Challenge.hosted_by == user_id).count()
-    if hosted_challenges > 0:
-        raise HTTPException(status_code=400, detail="User cannot be deleted because they are hosting one or more challenges.")
     db.delete(user)
     db.commit()
     return {"message": "User deleted successfully"}

@@ -5,6 +5,10 @@ import datetime
 import uuid
 
 class Model(Base):
+    """
+    This refers to a specific ML model name that user will select before submission e.g. Google Vision OCR, OpenAI Whisper.
+    
+    """ 
     __tablename__ = "model"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)

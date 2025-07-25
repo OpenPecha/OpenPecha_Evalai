@@ -1,6 +1,7 @@
 import uuid
 import datetime
 from pydantic import BaseModel
+from typing import Optional
 
 class ModelBase(BaseModel):
     name: str
@@ -9,6 +10,11 @@ class ModelBase(BaseModel):
 
 class ModelCreate(ModelBase):
     pass
+
+class ModelUpdate(ModelBase):
+    name: Optional[str] = None
+    created_by: Optional[str] = None
+    updated_by: Optional[str] = None
 
 class ModelRead(ModelBase):
     id: uuid.UUID
