@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from routers import user, challenge, submission, result, category, model
 from database import create_table
 from db_models import *
+import uvicorn
 
 
 app = FastAPI()
@@ -23,3 +24,13 @@ app.include_router(model.router)
 app.include_router(challenge.router)
 app.include_router(submission.router)
 app.include_router(result.router)
+
+
+if __name__ == "__main__":
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info"
+    )
