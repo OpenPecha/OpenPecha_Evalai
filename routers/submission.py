@@ -5,8 +5,8 @@ import models
 from database import get_db
 from schemas.submission import SubmissionCreate, SubmissionRead
 from CRUD.upload_file_to_s3 import process_json_file_upload
+from CRUD.model import create_or_get_model
 import uuid
-import json
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
 
@@ -46,23 +46,44 @@ async def create_new_submission(db: db_dependency, submission: SubmissionCreate 
 
 @router.delete("/{submission_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_submission(db: db_dependency, submission_id: uuid.UUID = Path(..., description="This is the ID of the submission")):
-    submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
-    if not submission:
-        raise HTTPException(status_code=404, detail="Submission not found")
-    db.delete(submission)
-    db.commit()
-    return {"message": "Submission deleted successfully"}
+    try:
+        submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
+        if not submission:
+            raise HTTPException(status_code=404, detail="Submission not found")
+        
+        # Database CASCADE will automatically delete related results
+        db.delete(submission)
+        db.commit()
+        
+        return {"message": "Submission and related records deleted successfully"}
+    
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        db.rollback()
+        # Return detailed error information
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Failed to delete submission",
+                "message": str(e),
+                "submission_id": str(submission_id),
+                "error_type": type(e).__name__
+            }
+        )
 
 # ******** basic endpoints ********
 
 
 # ******** upload json file ********
-@router.post("/upload-json", status_code=status.HTTP_201_CREATED)
-async def upload_json_file(
+@router.post("/create-submission", response_model=SubmissionRead, status_code=status.HTTP_201_CREATED)
+async def create_submission(
     db: db_dependency,
     file: UploadFile = File(..., description="JSON file containing inference results with 'filename' and 'prediction' columns"),
     user_id: uuid.UUID = Form(..., description="ID of the user uploading the file"),
-    model_id: uuid.UUID = Form(..., description="ID of the model used for inference")
+    model_name: str = Form(..., description="Name of the model used for inference"),
+    description: str = Form(..., description="Description of the submission")
 ):
     """
     Upload and validate a JSON file containing ML inference results.
@@ -74,11 +95,10 @@ async def upload_json_file(
         # Validate file type
         if not file.filename.lower().endswith('.json'):
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="Only JSON files are allowed"
             )
         
-        # Read file content
         file_content = await file.read()
         
         # Validate file size (limit to 50MB)
@@ -88,13 +108,32 @@ async def upload_json_file(
                 status_code=413,
                 detail="File size exceeds 50MB limit"
             )
+
+        # Create or get model record in database first
+        model_instance = create_or_get_model(db, model_name, user_id)
         
-        # Process the file (validate JSON structure and upload to S3)
-        success, message, s3_url, json_data = process_json_file_upload(
-            file_content, file.filename
+        # Create submission record in database (without dataset_url initially)
+        submission_data = {
+            "user_id": user_id,
+            "model_id": model_instance.id,
+            "description": description,
+            "dataset_url": None  # Will be updated after S3 upload
+        }
+        
+        submission_instance = models.Submission(**submission_data)
+        db.add(submission_instance)
+        db.commit()
+        db.refresh(submission_instance)
+        
+        # Now process the file with submission ID for S3 versioning
+        success, message, s3_url, json_data = await process_json_file_upload(
+            file_content, file.filename, user_id, model_instance.id, submission_instance.id
         )
-        
+
         if not success:
+            # Rollback the submission if upload fails
+            db.delete(submission_instance)
+            db.commit()
             raise HTTPException(
                 status_code=400,
                 detail={
@@ -104,32 +143,16 @@ async def upload_json_file(
                 }
             )
         
-        # Create submission record in database
-        submission_data = {
-            "user_id": user_id,
-            "model_id": model_id,
-            "description": f"JSON inference file upload: {file.filename}",
-            "dataset_url": s3_url
-        }
-        
-        submission_instance = models.Submission(**submission_data)
-        db.add(submission_instance)
+        # Update submission record with S3 URL
+        submission_instance.dataset_url = s3_url
         db.commit()
         db.refresh(submission_instance)
         
         # Calculate some basic statistics about the uploaded data
         record_count = len(json_data) if isinstance(json_data, list) else 1
         
-        return {
-            "message": "File uploaded and processed successfully",
-            "submission_id": submission_instance.id,
-            "s3_url": s3_url,
-            "filename": file.filename,
-            "record_count": record_count,
-            "validation_status": "passed",
-            "upload_timestamp": submission_instance.created_at
-        }
-        
+        # Return the submission instance which matches SubmissionRead schema
+        return submission_instance
     except HTTPException:
         # Re-raise HTTP exceptions as-is
         raise

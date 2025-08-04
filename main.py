@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from routers import user, challenge, submission, result, category, model
+from routers import user, challenge, submission, result, category, model, file_upload
 from database import create_table
 from db_models import *
 import uvicorn
@@ -37,6 +37,7 @@ app.include_router(model.router)
 app.include_router(challenge.router)
 app.include_router(submission.router)
 app.include_router(result.router)
+app.include_router(file_upload.router) # for testing. you can comment out.
 
 
 if __name__ == "__main__":
