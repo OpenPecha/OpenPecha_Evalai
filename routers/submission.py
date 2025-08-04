@@ -31,6 +31,7 @@ async def get_submission(db: db_dependency, submission_id: uuid.UUID = Path(...,
 async def create_new_submission(db: db_dependency, submission: SubmissionCreate = Body(..., description="The submission details for creating a new submission.", example={
     "user_id": "123e4567-e89b-12d3-a456-426614174000",
     "model_id": "123e4567-e89b-12d3-a456-426614174000",
+    "challenge_id": "123e4567-e89b-12d3-a456-426614174000",
     "description": "This is a description of the submission",
     "dataset_url": "https://my-bucket.s3.amazonaws.com/my-dataset.zip"
 } )):
@@ -83,6 +84,7 @@ async def create_submission(
     file: UploadFile = File(..., description="JSON file containing inference results with 'filename' and 'prediction' columns"),
     user_id: uuid.UUID = Form(..., description="ID of the user uploading the file"),
     model_name: str = Form(..., description="Name of the model used for inference"),
+    challenge_id: uuid.UUID = Form(..., description="ID of the challenge for evaluation"),
     description: str = Form(..., description="Description of the submission")
 ):
     """
@@ -112,10 +114,20 @@ async def create_submission(
         # Create or get model record in database first
         model_instance = create_or_get_model(db, model_name, user_id)
         
+        # Fetch challenge name for S3 path organization
+        challenge_instance = db.query(models.Challenge).filter(models.Challenge.id == challenge_id).first()
+        if not challenge_instance:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Challenge with ID {challenge_id} not found"
+            )
+        challenge_name = challenge_instance.title
+        
         # Create submission record in database (without dataset_url initially)
         submission_data = {
             "user_id": user_id,
             "model_id": model_instance.id,
+            "challenge_id": challenge_id,
             "description": description,
             "dataset_url": None  # Will be updated after S3 upload
         }
@@ -127,7 +139,7 @@ async def create_submission(
         
         # Now process the file with submission ID for S3 versioning
         success, message, s3_url, json_data = await process_json_file_upload(
-            file_content, file.filename, user_id, model_instance.id, submission_instance.id
+            file_content, file.filename, user_id, model_instance.id, submission_instance.id, challenge_name
         )
 
         if not success:

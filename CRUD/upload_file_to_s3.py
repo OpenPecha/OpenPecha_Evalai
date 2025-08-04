@@ -65,14 +65,14 @@ def validate_json_structure(json_data: Dict[Any, Any]) -> Tuple[bool, str]:
         logger.error(f"Error during JSON validation: {str(e)}")
         return False, f"Validation error: {str(e)}"
 
-async def upload_file_to_s3(file: Any, filename: str, user_id: UUID, model_id: UUID, submission_id: UUID) -> Tuple[bool, str, str]:
+async def upload_file_to_s3(file: Any, filename: str, user_id: UUID, model_id: UUID, submission_id: UUID, challenge_name: str) -> Tuple[bool, str, str]:
     session = aioboto3.Session(
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
         region_name=os.getenv("AWS_REGION")
     )
     
-    folder_name = f"evalai/{user_id}/{model_id}"
+    folder_name = f"evalai/challenges/{challenge_name}"
 
     async with session.client('s3') as s3_client:
         try:
@@ -102,7 +102,7 @@ async def upload_file_to_s3(file: Any, filename: str, user_id: UUID, model_id: U
         except Exception as e:
             return False, f"Failed to upload file: {str(e)}", ""
 
-async def process_json_file_upload(file_content: bytes, filename: str, user_id: UUID, model_id: UUID, submission_id: UUID) -> Tuple[bool, str, str, Dict[Any, Any]]:
+async def process_json_file_upload(file_content: bytes, filename: str, user_id: UUID, model_id: UUID, submission_id: UUID, challenge_name: str) -> Tuple[bool, str, str, Dict[Any, Any]]:
     """
     Complete process for validating and uploading JSON file
     
@@ -112,6 +112,7 @@ async def process_json_file_upload(file_content: bytes, filename: str, user_id: 
         user_id: ID of the user uploading the file
         model_id: ID of the model for organization
         submission_id: ID of the submission for versioning
+        challenge_name: Name of the challenge for S3 path organization
         
     Returns:
         Tuple of (success, message, s3_url, json_data)
@@ -132,7 +133,7 @@ async def process_json_file_upload(file_content: bytes, filename: str, user_id: 
         # Convert file_content back to file-like object for S3 upload
         from io import BytesIO
         file_obj = BytesIO(file_content)
-        upload_success, upload_result, file_url = await upload_file_to_s3(file_obj, filename, user_id, model_id, submission_id)
+        upload_success, upload_result, file_url = await upload_file_to_s3(file_obj, filename, user_id, model_id, submission_id, challenge_name)
         
         if upload_success:
             logger.info(f"File {filename} processed successfully")
