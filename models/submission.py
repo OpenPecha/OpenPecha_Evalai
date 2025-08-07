@@ -8,7 +8,7 @@ class Submission(Base):
     __tablename__ = "submission"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("user.id"), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("user.id"), nullable=False, index=True)
     model_id = Column(UUID(as_uuid=True), ForeignKey("model.id"), nullable=False, index=True)
     challenge_id = Column(UUID(as_uuid=True), ForeignKey("challenge.id"), nullable=False, index=True)
     description = Column(String, nullable=True)

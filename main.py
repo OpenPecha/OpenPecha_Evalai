@@ -53,15 +53,23 @@ def custom_openapi():
     if "securitySchemes" not in openapi_schema["components"]:
         openapi_schema["components"]["securitySchemes"] = {}
     
-    # Clear any existing security schemes and set only Auth0Bearer
-    openapi_schema["components"]["securitySchemes"] = {
-        "Auth0Bearer": {
-            "type": "http",
-            "scheme": "bearer",
-            "bearerFormat": "JWT",
-            "description": "Auth0 JWT Token - Use your Auth0 access token"
-        }
-    }
+    # Replace HTTPBearer scheme with Auth0Bearer for better naming
+    if "HTTPBearer" in openapi_schema["components"]["securitySchemes"]:
+        openapi_schema["components"]["securitySchemes"]["Auth0Bearer"] = openapi_schema["components"]["securitySchemes"]["HTTPBearer"]
+        del openapi_schema["components"]["securitySchemes"]["HTTPBearer"]
+        
+        # Update the description
+        openapi_schema["components"]["securitySchemes"]["Auth0Bearer"]["description"] = "Auth0 JWT Token - Use your Auth0 access token"
+        openapi_schema["components"]["securitySchemes"]["Auth0Bearer"]["bearerFormat"] = "JWT"
+        
+        # Update security references in paths to use Auth0Bearer instead of HTTPBearer
+        if "paths" in openapi_schema:
+            for path, path_item in openapi_schema["paths"].items():
+                for method, operation in path_item.items():
+                    if isinstance(operation, dict) and "security" in operation:
+                        for security_req in operation["security"]:
+                            if "HTTPBearer" in security_req:
+                                security_req["Auth0Bearer"] = security_req.pop("HTTPBearer")
     
     app.openapi_schema = openapi_schema
     return app.openapi_schema

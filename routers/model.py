@@ -1,11 +1,12 @@
 from fastapi import APIRouter, status, HTTPException, Depends, Path, Body
-from typing import List
+from typing import List, Annotated
 from sqlalchemy.orm import Session
 from database import get_db
 from models.model import Model
+from models.user import User
 from schemas.model import ModelCreate, ModelRead, ModelUpdate
+from auth import get_current_active_user
 import uuid
-from typing import Annotated
 
 router = APIRouter(prefix="/model", tags=["Model"])
 
@@ -13,11 +14,13 @@ db_dependency = Annotated[Session, Depends(get_db)]
 
 # Create Model
 @router.post("/", response_model=ModelRead, status_code=status.HTTP_201_CREATED)
-async def create_model(db: db_dependency, model: ModelCreate = Body(..., description="The model details for creating a new model.", example={
-    "name": "Google Vision OCR",
-    "created_by": "admin",
-    "updated_by": "admin"
-    }  )):
+async def create_model(
+    db: db_dependency, 
+    current_user: User = Depends(get_current_active_user),
+    model: ModelCreate = Body(..., description="The model details for creating a new model.", example={
+        "name": "Google Vision OCR"
+    })
+):
     """
     Create a new model if you want to. Otherwise, during submission only model will be created. As if user enters a new model name then it gets created, if not new then it will not create a new model.
 
@@ -32,7 +35,12 @@ async def create_model(db: db_dependency, model: ModelCreate = Body(..., descrip
         Model: The created model instance.
     """
     try:
-        model_instance = Model(**model.model_dump())
+        # Add user info from token to the model data
+        model_data = model.model_dump()
+        model_data['created_by'] = current_user.id
+        model_data['updated_by'] = current_user.id
+        
+        model_instance = Model(**model_data)
         db.add(model_instance)
         db.commit()
         db.refresh(model_instance)
@@ -78,6 +86,7 @@ async def get_single_model(db: db_dependency, model_id: uuid.UUID = Path(..., de
 @router.patch("/{model_id}", response_model=ModelRead, status_code=status.HTTP_200_OK)
 async def update_single_model(
     db: db_dependency,
+    current_user: User = Depends(get_current_active_user),
     model_id: uuid.UUID = Path(..., description="ID of the model to update"),
     model_update: ModelUpdate = Body(..., description="Fields to update for the model")
 ):
@@ -104,7 +113,11 @@ async def update_single_model(
 
 # Delete Model
 @router.delete("/{model_id}", status_code=status.HTTP_200_OK)
-async def delete_single_model(db: db_dependency, model_id: uuid.UUID = Path(..., description="ID of the model")):
+async def delete_single_model(
+    db: db_dependency, 
+    current_user: User = Depends(get_current_active_user),
+    model_id: uuid.UUID = Path(..., description="ID of the model")
+):
     """
     Delete a single model by ID.
 

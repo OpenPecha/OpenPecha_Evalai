@@ -44,7 +44,7 @@ class ModelReadNested(BaseModel):
 
 class SubmissionReadNested(BaseModel):
     id: uuid.UUID
-    user_id: uuid.UUID
+    user_id: str
     model_id: uuid.UUID
     description: str | None = None
     dataset_url: str | None = None
@@ -58,7 +58,7 @@ class SubmissionReadNested(BaseModel):
 class ResultReadNested(BaseModel):
     id: uuid.UUID
     type: ResultType
-    user_id: uuid.UUID
+    user_id: str
     submission_id: uuid.UUID
     score: float
     created_by: str

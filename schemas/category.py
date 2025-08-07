@@ -8,8 +8,8 @@ class CategoryBase(BaseModel):
     created_by: str
     updated_by: str
 
-class CategoryCreate(CategoryBase):
-    pass
+class CategoryCreate(BaseModel):
+    name: str  # Only name is required from the request body
 
 class CategoryUpdate(CategoryBase):
     name: Optional[str] = None

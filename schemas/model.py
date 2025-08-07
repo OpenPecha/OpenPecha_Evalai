@@ -8,8 +8,8 @@ class ModelBase(BaseModel):
     created_by: str
     updated_by: str
 
-class ModelCreate(ModelBase):
-    pass
+class ModelCreate(BaseModel):
+    name: str  # Only name is required from the request body
 
 class ModelUpdate(ModelBase):
     name: Optional[str] = None

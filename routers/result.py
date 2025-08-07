@@ -5,6 +5,8 @@ from database import get_db
 from schemas.result import ResultCreate, ResultRead, ResultReadNested
 import uuid
 from models.result import Result
+from models.user import User
+from auth import get_current_active_user
 
 router = APIRouter(prefix="/results", tags=["results"])
 
@@ -109,7 +111,7 @@ async def create_new_result(
         result_data['user_id'] = current_user.id
         result_data['created_by'] = current_user.username
         result_data['updated_by'] = current_user.username
-        result_instance = models.Result(**result_data)
+        result_instance = Result(**result_data)
         db.add(result_instance)
         db.commit()
         db.refresh(result_instance)
@@ -119,7 +121,11 @@ async def create_new_result(
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.delete("/{result_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_result(db: db_dependency, result_id: uuid.UUID = Path(gt=0)):
+async def delete_result(
+    db: db_dependency, 
+    current_user: User = Depends(get_current_active_user),
+    result_id: uuid.UUID = Path(..., description="ID of the result to delete")
+):
     result = db.query(Result).filter(Result.id == result_id).first()
     if not result:
         raise HTTPException(status_code=404, detail="Result not found")

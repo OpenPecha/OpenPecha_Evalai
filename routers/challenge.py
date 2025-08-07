@@ -8,6 +8,7 @@ from schemas.challenge import ChallengeCreate, ChallengeRead, ChallengeWithCateg
 from uuid import UUID
 from sqlalchemy.orm import joinedload
 from CRUD.ground_truth_upload_s3 import process_ground_truth_file
+from auth import get_current_active_user
 import logging
 import uuid
 from datetime import datetime
@@ -41,16 +42,22 @@ async def get_challenge(db: db_dependency, challenge_id: UUID = Path(..., descri
 
 # For creating a new challenge with ground truth file.
 
-@router.post("/create", response_model=ChallengeRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/create", 
+    response_model=ChallengeRead, 
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new challenge",
+    description="Create a new challenge with optional ground truth file upload"
+)
 async def create_new_challenge(
     db: db_dependency,
+    current_user: User = Depends(get_current_active_user),
     title: str = Form(..., description="Challenge title"),
     category_id: UUID = Form(..., description="Category ID"),
-    created_by: UUID = Form(..., description="User ID who created the challenge"),
     image_uri: Optional[str] = Form(None, description="Challenge image URL"),
     description: Optional[str] = Form(None, description="Challenge description"),
     status: Optional[str] = Form("active", description="Challenge status"),
-    ground_truth_file: Optional[UploadFile] = File(None, description="Ground truth JSON file")
+    ground_truth_file: UploadFile = File(None, description="Ground truth JSON file for the challenge (optional)")
 ):
     """
     Create a new challenge with optional ground truth file upload.
@@ -65,7 +72,7 @@ async def create_new_challenge(
         challenge_data = {
             "title": title,
             "category_id": category_id,
-            "created_by": created_by,
+            "created_by": current_user.id,  # Get user ID from authenticated token
             "image_uri": image_uri,
             "description": description,
             "status": status,
@@ -124,7 +131,7 @@ async def update_challenge(
     image_uri: Optional[str] = Form(None, description="Challenge image URL"),
     description: Optional[str] = Form(None, description="Challenge description"),
     status: Optional[str] = Form(None, description="Challenge status"),
-    ground_truth_file: Optional[UploadFile] = File(None, description="Ground truth JSON file to replace existing one (or you can leave empty. do not check box send empty value)")
+    ground_truth_file: UploadFile = File(None, description="Ground truth JSON file to replace existing one (optional)")
 ):
     """
     Update an existing challenge with optional ground truth file upload.
@@ -208,7 +215,11 @@ async def update_challenge(
 # for deleting a challenge
 
 @router.delete("/remove/{challenge_id}", status_code=status.HTTP_200_OK)
-async def delete_challenge(db: db_dependency, challenge_id: UUID = Path(..., description="This is the ID of the challenge to delete")):
+async def delete_challenge(
+    db: db_dependency, 
+    current_user: User = Depends(get_current_active_user),
+    challenge_id: UUID = Path(..., description="This is the ID of the challenge to delete")
+):
     """
     Delete a challenge by ID and return confirmation.
     
@@ -221,6 +232,11 @@ async def delete_challenge(db: db_dependency, challenge_id: UUID = Path(..., des
         if not challenge:
             logging.warning(f"Challenge not found for deletion: {challenge_id}")
             raise HTTPException(status_code=404, detail="Challenge not found")
+        
+        # Check if the current user is the owner of the challenge
+        if challenge.created_by != current_user.id:
+            logging.warning(f"User {current_user.id} attempted to delete challenge {challenge_id} owned by {challenge.created_by}")
+            raise HTTPException(status_code=403, detail="You can only delete challenges you created")
         
         challenge_title = challenge.title
         challenge_created_at = challenge.created_at

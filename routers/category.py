@@ -2,8 +2,10 @@ from fastapi import APIRouter, status, HTTPException, Depends, Path, Body
 from typing import Annotated, List
 from sqlalchemy.orm import Session
 from models.category import Category
+from models.user import User
 from database import get_db
 from schemas.category import CategoryCreate, CategoryRead, CategoryUpdate
+from auth import get_current_active_user
 from uuid import UUID
 
 router = APIRouter(prefix="/categories", tags=["categories"])
@@ -31,13 +33,20 @@ async def get_category(db: db_dependency, category_id: UUID = Path(..., descript
 # for creating new category
 
 @router.post("/create", response_model=CategoryRead, status_code=status.HTTP_201_CREATED)
-async def create_new_category(db: db_dependency, category: CategoryCreate = Body(..., description="The category details for creating a new category.", example={
-    "name": "OCR",
-    "created_by": "admin",
-    "updated_by": "admin"
-    })):
+async def create_new_category(
+    db: db_dependency, 
+    current_user: User = Depends(get_current_active_user),
+    category: CategoryCreate = Body(..., description="The category details for creating a new category.", example={
+        "name": "OCR"
+    })
+):
     try:
-        category_instance = Category(**category.model_dump())
+        # Add user info from token to the category data
+        category_data = category.model_dump()
+        category_data['created_by'] = current_user.id
+        category_data['updated_by'] = current_user.id
+        
+        category_instance = Category(**category_data)
         db.add(category_instance)
         db.commit()
         db.refresh(category_instance)
@@ -49,7 +58,11 @@ async def create_new_category(db: db_dependency, category: CategoryCreate = Body
 # for deleting category
 
 @router.delete("/{category_id}", status_code=status.HTTP_200_OK)
-async def delete_category(db: db_dependency, category_id: UUID = Path(..., description="This is the ID of the category to delete")):
+async def delete_category(
+    db: db_dependency, 
+    current_user: User = Depends(get_current_active_user),
+    category_id: UUID = Path(..., description="This is the ID of the category to delete")
+):
     category = db.query(Category).filter(Category.id == category_id).first()
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
@@ -60,7 +73,12 @@ async def delete_category(db: db_dependency, category_id: UUID = Path(..., descr
 # for updating category
 
 @router.patch("/{category_id}", response_model=CategoryRead, status_code=status.HTTP_200_OK)
-async def update_category(db: db_dependency, category_id: UUID = Path(..., description="This is the ID of the category to update"), category_update: CategoryUpdate = Body(..., description="The fields to update for the category")):
+async def update_category(
+    db: db_dependency, 
+    current_user: User = Depends(get_current_active_user),
+    category_id: UUID = Path(..., description="This is the ID of the category to update"), 
+    category_update: CategoryUpdate = Body(..., description="The fields to update for the category")
+):
     category = db.query(Category).filter(Category.id == category_id).first()
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")

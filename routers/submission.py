@@ -9,6 +9,7 @@ from CRUD.upload_file_to_s3 import process_json_file_upload
 from CRUD.model import create_or_get_model
 from Evaluation.evaluation import trigger_automatic_evaluation
 import logging
+from auth import get_current_active_user
 import uuid
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
@@ -61,11 +62,19 @@ async def get_submission(db: db_dependency, submission_id: uuid.UUID = Path(...,
 #         raise HTTPException(status_code=400, detail=str(e))
 
 @router.delete("/{submission_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_submission(db: db_dependency, submission_id: uuid.UUID = Path(..., description="This is the ID of the submission")):
+async def delete_submission(
+    db: db_dependency, 
+    current_user: User = Depends(get_current_active_user),
+    submission_id: uuid.UUID = Path(..., description="This is the ID of the submission")
+):
     try:
         submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
         if not submission:
             raise HTTPException(status_code=404, detail="Submission not found")
+        
+        # Check if the current user is the owner of the submission
+        if submission.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only delete your own submissions")
         
         # Database CASCADE will automatically delete related results
         db.delete(submission)
@@ -96,8 +105,8 @@ async def delete_submission(db: db_dependency, submission_id: uuid.UUID = Path(.
 @router.post("/create-submission", response_model=SubmissionRead, status_code=status.HTTP_201_CREATED)
 async def create_submission(
     db: db_dependency,
+    current_user: User = Depends(get_current_active_user),
     file: UploadFile = File(..., description="JSON file containing inference results with 'filename' and 'prediction' columns"),
-    user_id: uuid.UUID = Form(..., description="ID of the user uploading the file (will come from front end)"),
     model_name: str = Form(..., description="Name of the model used for inference (you can add new model name and it will create in our model table only if the submission file passes the validation.)"),
     challenge_id: uuid.UUID = Form(..., description="ID of the challenge for evaluation (basically holds the ground truth file)"),
     description: str = Form(..., description="Description of the submission (will come from front end)")
@@ -109,7 +118,7 @@ async def create_submission(
 
     Example usage:
     - file: inference_results.json
-    - user_id: 123e4567-e89b-12d3-a456-426614174000
+    - user_id: (automatically extracted from authentication token)
     - model_name: my-awesome-model
     - challenge_id: 123e4567-e89b-12d3-a456-426614174000
     - description: This is a description of the submission
@@ -133,7 +142,7 @@ async def create_submission(
             )
 
         # Create or get model record in database first
-        model_instance = create_or_get_model(db, model_name, user_id)
+        model_instance = create_or_get_model(db, model_name, current_user.id)
         
         # Fetch challenge name for S3 path organization
         challenge_instance = db.query(models.Challenge).filter(models.Challenge.id == challenge_id).first()
@@ -146,7 +155,7 @@ async def create_submission(
         
         # Create submission record in database (without dataset_url initially)
         submission_data = {
-            "user_id": user_id,
+            "user_id": current_user.id,
             "model_id": model_instance.id,
             "challenge_id": challenge_id,
             "description": description,
@@ -161,7 +170,7 @@ async def create_submission(
         # Now process the file with submission ID for S3 versioning
         # Include challenge ground truth URL for filename validation
         success, message, s3_url, json_data = await process_json_file_upload(
-            file_content, file.filename, user_id, model_instance.id, submission_instance.id, challenge_name, challenge_instance.ground_truth
+            file_content, file.filename, current_user.id, model_instance.id, submission_instance.id, challenge_name, challenge_instance.ground_truth
         )
 
         if not success:

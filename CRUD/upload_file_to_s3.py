@@ -1,4 +1,3 @@
-import boto3
 import json
 from typing import Dict, Any, Tuple, List, Set
 from dotenv import load_dotenv
