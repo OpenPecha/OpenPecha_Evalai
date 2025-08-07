@@ -1,12 +1,13 @@
 import boto3
 import json
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List, Set
 from dotenv import load_dotenv
 import logging
 import aioboto3
-from botocore.exceptions import NoCredentialsError, PartialCredentialsError
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError, ClientError
 import os
 from uuid import UUID
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,71 @@ def validate_json_structure(json_data: Dict[Any, Any]) -> Tuple[bool, str]:
         logger.error(f"Error during JSON validation: {str(e)}")
         return False, f"Validation error: {str(e)}"
 
+async def validate_submission_filenames(submission_data: List[Dict], challenge_ground_truth_url: str) -> Tuple[bool, str, Set[str]]:
+    """
+    Validate that submission filenames match the challenge ground truth filenames.
+    
+    Args:
+        submission_data: List of submission records with 'filename' and 'prediction'
+        challenge_ground_truth_url: S3 URL of the challenge ground truth JSON
+        
+    Returns:
+        Tuple of (is_valid, error_message, valid_filenames_set)
+    """
+    try:
+        # Download challenge ground truth directly via HTTP
+        try:
+            # Disable SSL verification for S3 URLs to avoid certificate issues with custom bucket names
+            verify_ssl = False if 'amazonaws.com' in challenge_ground_truth_url else True
+            response = requests.get(challenge_ground_truth_url, timeout=30, verify=verify_ssl)
+            response.raise_for_status()  # Raises exception for bad status codes
+            ground_truth_data = response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to download challenge ground truth: {str(e)}")
+            return False, f"Failed to access challenge ground truth: {str(e)}", set()
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse challenge ground truth JSON: {str(e)}")
+            return False, f"Challenge ground truth is not valid JSON: {str(e)}", set()
+        
+        # Extract filenames from ground truth (using 'filename' field)
+        if not isinstance(ground_truth_data, list):
+            return False, "Challenge ground truth must be a list of records", set()
+        
+        ground_truth_filenames = set()
+        for record in ground_truth_data:
+            if 'filename' not in record:
+                return False, "Challenge ground truth records missing 'filename' field", set()
+            ground_truth_filenames.add(record['filename'])
+        
+        # Extract filenames from submission
+        submission_filenames = set()
+        for record in submission_data:
+            submission_filenames.add(record['filename'])
+        
+        # Check if submission filenames are a subset of ground truth filenames
+        invalid_filenames = submission_filenames - ground_truth_filenames
+        
+        if invalid_filenames:
+            invalid_list = list(invalid_filenames)[:5]  # Show first 5 invalid filenames
+            error_msg = f"Submission contains {len(invalid_filenames)} filename(s) not found in challenge ground truth. Examples: {invalid_list}"
+            if len(invalid_filenames) > 5:
+                error_msg += f" (and {len(invalid_filenames) - 5} more)"
+            return False, error_msg, ground_truth_filenames
+        
+        # Check if submission has any valid filenames
+        if not submission_filenames:
+            return False, "Submission contains no filenames", ground_truth_filenames
+        
+        valid_count = len(submission_filenames)
+        total_ground_truth = len(ground_truth_filenames)
+        
+        logger.info(f"Filename validation successful: {valid_count}/{total_ground_truth} files in submission")
+        return True, f"All {valid_count} submission filenames are valid (out of {total_ground_truth} total challenge files)", ground_truth_filenames
+        
+    except Exception as e:
+        logger.error(f"Error during filename validation: {str(e)}")
+        return False, f"Filename validation error: {str(e)}", set()
+
 async def upload_file_to_s3(file: Any, filename: str, user_id: UUID, model_id: UUID, submission_id: UUID, challenge_name: str) -> Tuple[bool, str, str]:
     session = aioboto3.Session(
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
@@ -102,7 +168,7 @@ async def upload_file_to_s3(file: Any, filename: str, user_id: UUID, model_id: U
         except Exception as e:
             return False, f"Failed to upload file: {str(e)}", ""
 
-async def process_json_file_upload(file_content: bytes, filename: str, user_id: UUID, model_id: UUID, submission_id: UUID, challenge_name: str) -> Tuple[bool, str, str, Dict[Any, Any]]:
+async def process_json_file_upload(file_content: bytes, filename: str, user_id: UUID, model_id: UUID, submission_id: UUID, challenge_name: str, challenge_ground_truth_url: str = None) -> Tuple[bool, str, str, Dict[Any, Any]]:
     """
     Complete process for validating and uploading JSON file
     
@@ -128,6 +194,16 @@ async def process_json_file_upload(file_content: bytes, filename: str, user_id: 
         if not is_valid:
             logger.warning(f"JSON validation failed for file {filename}: {validation_message}")
             return False, validation_message, "", {}
+        
+        # Validate filenames against challenge ground truth (if provided)
+        if challenge_ground_truth_url:
+            filename_valid, filename_message, valid_filenames = await validate_submission_filenames(json_data, challenge_ground_truth_url)
+            
+            if not filename_valid:
+                logger.warning(f"Filename validation failed for file {filename}: {filename_message}")
+                return False, filename_message, "", {}
+            
+            logger.info(f"Filename validation passed: {filename_message}")
         
         # Upload to S3 if validation passes
         # Convert file_content back to file-like object for S3 upload

@@ -61,22 +61,22 @@ async def get_leaderboard(db: db_dependency):
 
 # ************ basic CRUD operations **************
 
-@router.post("/create", response_model=ResultRead, status_code=status.HTTP_201_CREATED)
-async def create_result(
-    db: db_dependency,
-    result: ResultCreate = Body(..., description="The result details for creating a new result.")
-):
-    if result.score < 0:
-        raise HTTPException(status_code=400, detail="Score must be non-negative.")
-    try:
-        result_instance = Result(**result.model_dump())
-        db.add(result_instance)
-        db.commit()
-        db.refresh(result_instance)
-        return result_instance
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+# @router.post("/create", response_model=ResultRead, status_code=status.HTTP_201_CREATED)
+# async def create_result(
+#     db: db_dependency,
+#     result: ResultCreate = Body(..., description="The result details for creating a new result.")
+# ):
+#     if result.score < 0:
+#         raise HTTPException(status_code=400, detail="Score must be non-negative.")
+#     try:
+#         result_instance = Result(**result.model_dump())
+#         db.add(result_instance)
+#         db.commit()
+#         db.refresh(result_instance)
+#         return result_instance
+#     except Exception as e:
+#         db.rollback()
+#         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("", response_model=List[ResultRead])
 async def list_all_results(db: db_dependency):
