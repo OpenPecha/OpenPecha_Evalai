@@ -18,6 +18,19 @@ async def create_model(db: db_dependency, model: ModelCreate = Body(..., descrip
     "created_by": "admin",
     "updated_by": "admin"
     }  )):
+    """
+    Create a new model if you want to. Otherwise, during submission only model will be created. As if user enters a new model name then it gets created, if not new then it will not create a new model.
+
+    Args:
+        db (db_dependency): Database session.
+        model (ModelCreate): Model details for creating a new model.
+
+    Raises:
+        HTTPException: If an error occurs during model creation.
+
+    Returns:
+        Model: The created model instance.
+    """
     try:
         model_instance = Model(**model.model_dump())
         db.add(model_instance)
@@ -31,12 +44,31 @@ async def create_model(db: db_dependency, model: ModelCreate = Body(..., descrip
 # Get all Models
 @router.get("/", response_model=List[ModelRead], status_code=status.HTTP_200_OK)
 async def get_all_models(db: db_dependency):
+    """
+    Get all models.
+
+    Args:
+        db (db_dependency): Database session.
+
+    Returns:
+        List[Model]: List of all models.
+    """
     models = db.query(Model).all()
     return models
 
 # Get Model by ID
 @router.get("/{model_id}", response_model=ModelRead, status_code=status.HTTP_200_OK)
 async def get_single_model(db: db_dependency, model_id: uuid.UUID = Path(..., description="ID of the model")):
+    """
+    Get a single model by ID.
+
+    Args:
+        db (db_dependency): Database session.
+        model_id (uuid.UUID): ID of the model to retrieve.
+
+    Returns:
+        Model: The retrieved model instance.
+    """
     model = db.query(Model).filter(Model.id == model_id).first()
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
@@ -49,6 +81,17 @@ async def update_single_model(
     model_id: uuid.UUID = Path(..., description="ID of the model to update"),
     model_update: ModelUpdate = Body(..., description="Fields to update for the model")
 ):
+    """
+    Update a single model by ID.
+
+    Args:
+        db (db_dependency): Database session.
+        model_id (uuid.UUID): ID of the model to update.
+        model_update (ModelUpdate): Fields to update for the model.
+
+    Returns:
+        Model: The updated model instance.
+    """
     model = db.query(Model).filter(Model.id == model_id).first()
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
@@ -62,6 +105,16 @@ async def update_single_model(
 # Delete Model
 @router.delete("/{model_id}", status_code=status.HTTP_200_OK)
 async def delete_single_model(db: db_dependency, model_id: uuid.UUID = Path(..., description="ID of the model")):
+    """
+    Delete a single model by ID.
+
+    Args:
+        db (db_dependency): Database session.
+        model_id (uuid.UUID): ID of the model to delete.
+
+    Returns:
+        dict: A dictionary containing a success message.
+    """
     model = db.query(Model).filter(Model.id == model_id).first()
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")

@@ -22,15 +22,6 @@ class ChallengeCreate(BaseModel):
     status: Optional[str] = None # it is optional for now.
     # created_by comes from authenticated user token
 
-class ChallengeUpdate(BaseModel):
-    title: Optional[str] = None
-    image_uri: Optional[str] = None
-    category_id: Optional[uuid.UUID] = None
-    ground_truth: Optional[str] = None
-    description: Optional[str] = None
-    status: Optional[str] = None
-    # created_by cannot be updated
-
 class ChallengeRead(ChallengeBase):
     id: uuid.UUID
     created_at: datetime.datetime

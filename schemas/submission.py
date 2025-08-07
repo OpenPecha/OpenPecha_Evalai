@@ -6,6 +6,7 @@ from typing import Optional
 class SubmissionBase(BaseModel):
     user_id: str = Field(..., description="ID of the user (Auth0 user ID)")
     model_id: uuid.UUID = Field(..., description="ID of the model")
+    challenge_id: uuid.UUID = Field(..., description="ID of the challenge")
     description: Optional[str] = Field(None, description="Description of the submission")
     dataset_url: Optional[str] = Field(None, description="Dataset URL of the submission")
 
@@ -17,6 +18,7 @@ class SubmissionCreate(BaseModel):
 
 class SubmissionUpdate(BaseModel):
     model_id: Optional[uuid.UUID] = Field(None, description="ID of the model from model table")
+    challenge_id: Optional[uuid.UUID] = Field(None, description="ID of the challenge")
     description: Optional[str] = Field(None, description="Description of the submission")
     dataset_url: Optional[str] = Field(None, description="Dataset URL of the submission")
     # user_id cannot be updated

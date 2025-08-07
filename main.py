@@ -1,15 +1,15 @@
 from fastapi import FastAPI
 from fastapi.security import HTTPBearer
 from fastapi.openapi.utils import get_openapi
-from routers import user, challenge, submission, result, category, model
+from routers import user, challenge, submission, result, category, model, file_upload
 from database import create_table
 import uvicorn
-import os
+
 from dotenv import load_dotenv
+import os
+from fastapi.middleware.cors import CORSMiddleware
 
-# Load environment variables from .env file
 load_dotenv()
-
 
 
 # Auth0 configuration
@@ -68,17 +68,23 @@ def custom_openapi():
 
 app.openapi = custom_openapi
 
+
 create_table()
 
+# CORS configuration
+allowed_origins = os.getenv(
+    "ALLOWED_ORIGINS", 
+    "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173"
+)
+origins = [origin.strip() for origin in allowed_origins.split(",")]
 
-# Allow requests from frontend dev server (adjust the port if needed)
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["http://localhost:5173"],  # Default Vite port
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 
@@ -104,6 +110,7 @@ app.include_router(model.router)
 app.include_router(challenge.router)
 app.include_router(submission.router)
 app.include_router(result.router)
+app.include_router(file_upload.router) # for testing. you can comment out.
 
 
 if __name__ == "__main__":
