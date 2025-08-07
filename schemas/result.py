@@ -9,14 +9,17 @@ class ResultType(str, Enum):
 
 class ResultBase(BaseModel):
     type: ResultType
-    user_id: uuid.UUID
+    user_id: str  # Auth0 user ID
     submission_id: uuid.UUID
     score: float
     created_by: str
     updated_by: str
 
-class ResultCreate(ResultBase):
-    pass
+class ResultCreate(BaseModel):
+    type: ResultType
+    submission_id: uuid.UUID
+    score: float
+    # user_id, created_by, updated_by come from authenticated token
 
 class ResultRead(ResultBase):
     id: uuid.UUID
