@@ -6,6 +6,8 @@ from database import get_db
 from schemas.submission import SubmissionCreate, SubmissionRead
 from CRUD.upload_file_to_s3 import process_json_file_upload
 from CRUD.model import create_or_get_model
+from Evaluation.evaluation import trigger_automatic_evaluation
+import logging
 import uuid
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
@@ -27,23 +29,23 @@ async def get_submission(db: db_dependency, submission_id: uuid.UUID = Path(...,
         raise HTTPException(status_code=404, detail="Submission not found")
     return submission
 
-@router.post("/create", response_model=SubmissionRead, status_code=status.HTTP_201_CREATED)
-async def create_new_submission(db: db_dependency, submission: SubmissionCreate = Body(..., description="The submission details for creating a new submission.", example={
-    "user_id": "123e4567-e89b-12d3-a456-426614174000",
-    "model_id": "123e4567-e89b-12d3-a456-426614174000",
-    "challenge_id": "123e4567-e89b-12d3-a456-426614174000",
-    "description": "This is a description of the submission",
-    "dataset_url": "https://my-bucket.s3.amazonaws.com/my-dataset.zip"
-} )):
-    try:
-        submission_instance = models.Submission(**submission.model_dump())
-        db.add(submission_instance)
-        db.commit()
-        db.refresh(submission_instance)
-        return submission_instance
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+# @router.post("/create", response_model=SubmissionRead, status_code=status.HTTP_201_CREATED)
+# async def create_new_submission(db: db_dependency, submission: SubmissionCreate = Body(..., description="The submission details for creating a new submission.", example={
+#     "user_id": "123e4567-e89b-12d3-a456-426614174000",
+#     "model_id": "123e4567-e89b-12d3-a456-426614174000",
+#     "challenge_id": "123e4567-e89b-12d3-a456-426614174000",
+#     "description": "This is a description of the submission",
+#     "dataset_url": "https://my-bucket.s3.amazonaws.com/my-dataset.zip"
+# } )):
+#     try:
+#         submission_instance = models.Submission(**submission.model_dump())
+#         db.add(submission_instance)
+#         db.commit()
+#         db.refresh(submission_instance)
+#         return submission_instance
+#     except Exception as e:
+#         db.rollback()
+#         raise HTTPException(status_code=400, detail=str(e))
 
 @router.delete("/{submission_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_submission(db: db_dependency, submission_id: uuid.UUID = Path(..., description="This is the ID of the submission")):
@@ -82,16 +84,22 @@ async def delete_submission(db: db_dependency, submission_id: uuid.UUID = Path(.
 async def create_submission(
     db: db_dependency,
     file: UploadFile = File(..., description="JSON file containing inference results with 'filename' and 'prediction' columns"),
-    user_id: uuid.UUID = Form(..., description="ID of the user uploading the file"),
-    model_name: str = Form(..., description="Name of the model used for inference"),
-    challenge_id: uuid.UUID = Form(..., description="ID of the challenge for evaluation"),
-    description: str = Form(..., description="Description of the submission")
+    user_id: uuid.UUID = Form(..., description="ID of the user uploading the file (will come from front end)"),
+    model_name: str = Form(..., description="Name of the model used for inference (you can add new model name and it will create in our model table only if the submission file passes the validation.)"),
+    challenge_id: uuid.UUID = Form(..., description="ID of the challenge for evaluation (basically holds the ground truth file)"),
+    description: str = Form(..., description="Description of the submission (will come from front end)")
 ):
     """
     Upload and validate a JSON file containing ML inference results.
-    
+
     The JSON file must contain 'filename' and 'prediction' columns.
-    If validation passes, the file is uploaded to S3 and metadata is stored in the database.
+
+    Example usage:
+    - file: inference_results.json
+    - user_id: 123e4567-e89b-12d3-a456-426614174000
+    - model_name: my-awesome-model
+    - challenge_id: 123e4567-e89b-12d3-a456-426614174000
+    - description: This is a description of the submission
     """
     try:
         # Validate file type
@@ -138,8 +146,9 @@ async def create_submission(
         db.refresh(submission_instance)
         
         # Now process the file with submission ID for S3 versioning
+        # Include challenge ground truth URL for filename validation
         success, message, s3_url, json_data = await process_json_file_upload(
-            file_content, file.filename, user_id, model_instance.id, submission_instance.id, challenge_name
+            file_content, file.filename, user_id, model_instance.id, submission_instance.id, challenge_name, challenge_instance.ground_truth
         )
 
         if not success:
@@ -162,6 +171,17 @@ async def create_submission(
         
         # Calculate some basic statistics about the uploaded data
         record_count = len(json_data) if isinstance(json_data, list) else 1
+        
+        # Trigger automatic evaluation
+        try:
+            evaluation_success = await trigger_automatic_evaluation(db, submission_instance)
+            if evaluation_success:
+                logging.info(f"Automatic evaluation completed for submission {submission_instance.id}")
+            else:
+                logging.warning(f"Automatic evaluation failed for submission {submission_instance.id}")
+        except Exception as eval_error:
+            # Log the error but don't fail the submission
+            logging.error(f"Error during automatic evaluation for submission {submission_instance.id}: {str(eval_error)}")
         
         # Return the submission instance which matches SubmissionRead schema
         return submission_instance

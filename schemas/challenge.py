@@ -16,15 +16,6 @@ class ChallengeBase(BaseModel):
 class ChallengeCreate(ChallengeBase):
     pass
 
-class ChallengeUpdate(BaseModel):
-    title: Optional[str] = None
-    image_uri: Optional[str] = None
-    category_id: Optional[uuid.UUID] = None
-    created_by: Optional[uuid.UUID] = None
-    ground_truth: Optional[str] = None
-    description: Optional[str] = None
-    status: Optional[str] = None
-
 class ChallengeRead(ChallengeBase):
     id: uuid.UUID
     created_at: datetime.datetime
