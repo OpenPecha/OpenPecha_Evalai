@@ -6,6 +6,8 @@ from fastapi.responses import HTMLResponse, FileResponse
 from fastapi import Request
 from routers import user, challenge, submission, result, category, model, file_upload
 from database import create_table
+from submission_cache import start_cache_cleanup
+from submission_worker import start_submission_workers
 import uvicorn
 
 from dotenv import load_dotenv
@@ -36,6 +38,12 @@ app = FastAPI(
     redoc_url="/redoc",  # Enable default redoc
     openapi_url="/openapi.json"
 )
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize submission processing system when FastAPI starts"""
+    start_cache_cleanup()  # Start cache cleanup task
+    start_submission_workers()  # Start worker threads
 
 def custom_openapi():
     if app.openapi_schema:

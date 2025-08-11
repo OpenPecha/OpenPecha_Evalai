@@ -7,7 +7,13 @@ from models.submission import SubmissionStatus
 from database import get_db
 from schemas.submission import SubmissionCreate, SubmissionRead, SubmissionCreatedResponse, SubmissionStatusResponse
 from CRUD.model import create_or_get_model
-from background_tasks import start_submission_processing, get_task_status
+from submission_worker import queue_submission_for_processing, get_queue_stats
+from submission_cache import (
+    get_submission_progress, 
+    set_submission_progress, 
+    get_cache_stats,
+    CacheStatus
+)
 import logging
 from auth import get_current_active_user
 import uuid
@@ -56,31 +62,63 @@ async def get_submission_status(
     Get the current processing status of a submission.
     
     Use this endpoint to track the progress of your submission after creation.
+    This endpoint checks the fast in-memory cache first for instant responses,
+    then falls back to the database if needed.
     
     Status values:
     - pending: Submission created, waiting to start processing
-    - processing: File upload and evaluation in progress
+    - processing: File upload and evaluation in progress  
     - completed: All processing completed successfully
     - failed: Processing failed, check status_message for details
     """
+    submission_id_str = str(submission_id)
+    
+    # First, try to get status from fast cache
+    cached_progress = get_submission_progress(submission_id_str)
+    if cached_progress:
+        # Cache hit - return instantly without database query
+        logging.info(f"Fast cache hit for submission {submission_id_str}")
+        
+        # Map cache status to schema status
+        cache_to_schema_status = {
+            CacheStatus.PENDING: SubmissionStatus.PENDING,
+            CacheStatus.PROCESSING: SubmissionStatus.PROCESSING,
+            CacheStatus.UPLOADING: SubmissionStatus.PROCESSING,  # Map uploading to processing
+            CacheStatus.VALIDATING: SubmissionStatus.PROCESSING,  # Map validating to processing
+            CacheStatus.EVALUATING: SubmissionStatus.PROCESSING,  # Map evaluating to processing
+            CacheStatus.COMPLETED: SubmissionStatus.COMPLETED,
+            CacheStatus.FAILED: SubmissionStatus.FAILED
+        }
+        
+        schema_status = cache_to_schema_status.get(cached_progress.status, SubmissionStatus.PROCESSING)
+        
+        return SubmissionStatusResponse(
+            id=submission_id,
+            status=schema_status,
+            status_message=cached_progress.message,
+            progress_percentage=cached_progress.progress_percentage,
+            current_step=cached_progress.step,
+            error_details=cached_progress.error_details,
+            created_at=None,  # We don't store timestamps in cache for speed
+            updated_at=None
+        )
+    
+    # Cache miss - fall back to database
+    logging.info(f"Cache miss for submission {submission_id_str}, querying database")
     submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
     if not submission:
         raise HTTPException(status_code=404, detail=SUBMISSION_NOT_FOUND_MESSAGE)
     
-    # Check if background task is still running
-    task_running = get_task_status(str(submission_id))
-    
-    # If task is running but status shows completed/failed, there might be a sync issue
-    if task_running and submission.status in [SubmissionStatus.COMPLETED, SubmissionStatus.FAILED]:
-        # Update to processing if task is still running
-        submission.status = SubmissionStatus.PROCESSING
-        submission.status_message = "Processing in progress..."
-        db.commit()
+    # For queue-based system, we rely on cache and database sync
+    # No need to check individual task status since workers manage their own state
     
     return SubmissionStatusResponse(
         id=submission.id,
         status=submission.status,
         status_message=submission.status_message,
+        progress_percentage=None,  # Database doesn't store progress percentage
+        current_step=None,  # Database doesn't store current step
+        error_details=None,  # Database doesn't store detailed errors
         created_at=submission.created_at,
         updated_at=submission.updated_at
     )
@@ -203,26 +241,40 @@ async def create_submission(
         db.commit()
         db.refresh(submission_instance)
         
-        # Start background processing
-        task_started = start_submission_processing(
-            str(submission_instance.id),
-            file_content,
-            file.filename,
-            current_user.id,
-            str(model_instance.id),
-            challenge_name,
-            challenge_instance.ground_truth
+        # Set initial cache state
+        set_submission_progress(
+            str(submission_instance.id), CacheStatus.PENDING,
+            "Submission queued for processing...",
+            progress=0, step="Queued"
         )
         
-        if not task_started:
-            # If we couldn't start the background task, mark as failed
+        # Queue submission for processing by workers
+        task_queued = queue_submission_for_processing(
+            submission_id=str(submission_instance.id),
+            file_content=file_content,
+            filename=file.filename,
+            user_id=current_user.id,
+            model_id=str(model_instance.id),
+            challenge_name=challenge_name,
+            ground_truth_url=challenge_instance.ground_truth,
+            priority=0  # Normal priority
+        )
+        
+        if not task_queued:
+            # If we couldn't queue the task, mark as failed
             submission_instance.status = SubmissionStatus.FAILED
-            submission_instance.status_message = "Failed to start background processing"
+            submission_instance.status_message = "Failed to queue submission for processing"
             db.commit()
+            
+            set_submission_progress(
+                str(submission_instance.id), CacheStatus.FAILED,
+                "Failed to queue submission",
+                progress=0, step="Failed", error="Queue system error"
+            )
             
             raise HTTPException(
                 status_code=500,
-                detail="Failed to start background processing for submission"
+                detail="Failed to queue submission for processing"
             )
         
         # Return immediate response with submission ID
@@ -245,3 +297,32 @@ async def create_submission(
                 "filename": file.filename if file else "unknown"
             }
         )
+
+# ******** Monitoring endpoints ********
+@router.get("/cache/stats")
+async def get_submission_cache_stats():
+    """
+    Get submission cache statistics for monitoring.
+    Shows cache performance and current active submissions.
+    """
+    return get_cache_stats()
+
+@router.get("/queue/stats")
+async def get_submission_queue_stats():
+    """
+    Get submission queue statistics for monitoring.
+    Shows queue size, worker status, and processing statistics.
+    """
+    return get_queue_stats()
+
+@router.get("/system/stats")
+async def get_submission_system_stats():
+    """
+    Get combined system statistics for submission processing.
+    Includes both cache and queue metrics.
+    """
+    return {
+        "cache": get_cache_stats(),
+        "queue": get_queue_stats(),
+        "system": "queue-based-workers"
+    }

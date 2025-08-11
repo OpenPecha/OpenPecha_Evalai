@@ -59,8 +59,11 @@ class SubmissionStatusResponse(BaseModel):
     id: uuid.UUID = Field(..., description=SUBMISSION_ID_DESCRIPTION)
     status: SubmissionStatus = Field(..., description="Current status of the submission")
     status_message: Optional[str] = Field(None, description="Status message or error details")
-    created_at: datetime.datetime = Field(..., description="Creation timestamp")
-    updated_at: datetime.datetime = Field(..., description="Last update timestamp")
+    progress_percentage: Optional[int] = Field(None, description="Progress percentage (0-100)", ge=0, le=100)
+    current_step: Optional[str] = Field(None, description="Current processing step")
+    error_details: Optional[str] = Field(None, description="Detailed error information if failed")
+    created_at: Optional[datetime.datetime] = Field(None, description="Creation timestamp")
+    updated_at: Optional[datetime.datetime] = Field(None, description="Last update timestamp")
     
     class Config:
         from_attributes = True
