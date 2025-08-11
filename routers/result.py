@@ -17,9 +17,24 @@ db_dependency = Annotated[Session, Depends(get_db)]
 from models.submission import Submission
 from models.model import Model
 
-@router.get("/leaderboard", response_model=List[ResultReadNested], status_code=status.HTTP_200_OK)
-async def get_leaderboard(db: db_dependency):
-    results = db.query(Result).all()
+@router.get("/challenge/{challenge_id}", response_model=List[ResultReadNested], status_code=status.HTTP_200_OK)
+async def get_results_by_challenge(
+    db: db_dependency,
+    challenge_id: uuid.UUID = Path(..., description="Challenge ID to get results for")
+):
+    """Get all results for a specific challenge"""
+    # Get all submissions for the challenge
+    submissions = db.query(Submission).filter(Submission.challenge_id == challenge_id).all()
+    
+    if not submissions:
+        return []
+    
+    # Get submission IDs
+    submission_ids = [submission.id for submission in submissions]
+    
+    # Get all results for these submissions
+    results = db.query(Result).filter(Result.submission_id.in_(submission_ids)).all()
+    
     nested_results = []
     for result in results:
         submission = db.query(Submission).filter(Submission.id == result.submission_id).first()
@@ -28,6 +43,7 @@ async def get_leaderboard(db: db_dependency):
         model = db.query(Model).filter(Model.id == submission.model_id).first()
         if not model:
             continue
+        
         model_data = {
             'id': model.id,
             'name': model.name,
@@ -59,26 +75,10 @@ async def get_leaderboard(db: db_dependency):
             'submission': submission_data
         }
         nested_results.append(result_data)
+    
     return nested_results
 
 # ************ basic CRUD operations **************
-
-# @router.post("/create", response_model=ResultRead, status_code=status.HTTP_201_CREATED)
-# async def create_result(
-#     db: db_dependency,
-#     result: ResultCreate = Body(..., description="The result details for creating a new result.")
-# ):
-#     if result.score < 0:
-#         raise HTTPException(status_code=400, detail="Score must be non-negative.")
-#     try:
-#         result_instance = Result(**result.model_dump())
-#         db.add(result_instance)
-#         db.commit()
-#         db.refresh(result_instance)
-#         return result_instance
-#     except Exception as e:
-#         db.rollback()
-#         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("", response_model=List[ResultRead])
 async def list_all_results(db: db_dependency):
