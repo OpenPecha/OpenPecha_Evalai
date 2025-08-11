@@ -139,3 +139,54 @@ async def delete_result(
     return {"message": "Result deleted successfully"}
 
 # ********* basic CRUD operations ends here *************
+
+@router.get("/debug/challenge/{challenge_id}")
+async def debug_challenge_data(
+    db: db_dependency,
+    challenge_id: uuid.UUID = Path(..., description="Challenge ID to debug")
+):
+    """Debug endpoint to see all data for a challenge"""
+    # Check if challenge exists
+    from models.challenge import Challenge
+    challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+    
+    # Get submissions
+    submissions = db.query(Submission).filter(Submission.challenge_id == challenge_id).all()
+    
+    # Get all results
+    all_results = db.query(Result).all()
+    
+    # Get results for each submission
+    submission_results = []
+    for submission in submissions:
+        results = db.query(Result).filter(Result.submission_id == submission.id).all()
+        submission_results.append({
+            "submission_id": str(submission.id),
+            "submission_challenge_id": str(submission.challenge_id),
+            "results_count": len(results),
+            "results": [{"id": str(r.id), "score": r.score, "type": r.type} for r in results]
+        })
+    
+    return {
+        "challenge_exists": challenge is not None,
+        "challenge_id": str(challenge_id),
+        "submissions_count": len(submissions),
+        "submissions": [{"id": str(s.id), "challenge_id": str(s.challenge_id)} for s in submissions],
+        "total_results_in_db": len(all_results),
+        "submission_results": submission_results
+    }
+
+@router.get("/debug/all-data")
+async def debug_all_data(db: db_dependency):
+    """Debug endpoint to see all data in database"""
+    from models.challenge import Challenge
+    
+    challenges = db.query(Challenge).all()
+    submissions = db.query(Submission).all() 
+    results = db.query(Result).all()
+    
+    return {
+        "challenges": [{"id": str(c.id), "title": c.title} for c in challenges],
+        "submissions": [{"id": str(s.id), "challenge_id": str(s.challenge_id), "user_id": s.user_id} for s in submissions],
+        "results": [{"id": str(r.id), "submission_id": str(r.submission_id), "score": r.score} for r in results]
+    }
