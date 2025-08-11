@@ -1,6 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.security import HTTPBearer
 from fastapi.openapi.utils import get_openapi
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi import Request
 from routers import user, challenge, submission, result, category, model, file_upload
 from database import create_table
 import uvicorn
@@ -11,6 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
+# Templates setup
+templates = Jinja2Templates(directory="templates")
 
 # Auth0 configuration
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
@@ -103,7 +108,38 @@ app.add_middleware(
 @app.get("/")
 async def root():
     """Root endpoint"""
-    return {"message": "Welcome to OpenPecha EvalAI API", "status": "success"}
+    return {
+        "message": "Welcome to OpenPecha EvalAI API", 
+        "status": "success",
+        "documentation": "/documentation",
+        "api_docs": "/docs"
+    }
+
+
+@app.get("/documentation", response_class=HTMLResponse)
+async def documentation(request: Request):
+    """API Documentation with examples and specifications"""
+    return templates.TemplateResponse("documentation.html", {"request": request})
+
+
+@app.get("/documentation/samples/{filename}")
+async def download_sample(filename: str):
+    """Download sample JSON files"""
+    allowed_files = ["ocr challenge.json", "ocr submission.json"]
+    
+    if filename not in allowed_files:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    file_path = f"samples/{filename}"
+    
+    try:
+        return FileResponse(
+            path=file_path,
+            filename=filename,
+            media_type="application/json"
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Sample file not found")
 
 
 

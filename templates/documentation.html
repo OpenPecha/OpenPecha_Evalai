@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenPecha EvalAI - How to Use</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      .step-number {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        width: 3rem;
+        height: 3rem;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        font-size: 1.25rem;
+      }
+      .download-btn {
+        transition: all 0.3s ease;
+      }
+      .download-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+      }
+    </style>
+  </head>
+  <body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-blue-600 text-white shadow-lg">
+      <div class="container mx-auto px-6 py-4">
+        <div class="text-center">
+          <h1 class="text-2xl font-bold">OpenPecha EvalAI</h1>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-6 py-8">
+      <div class="max-w-4xl mx-auto">
+        <!-- Title Section -->
+        <div class="text-center mb-12">
+          <h1 class="text-4xl font-bold text-gray-800 mb-4">
+            How to Create Challenges & Submissions
+          </h1>
+          <p class="text-xl text-gray-600">
+            Simple steps to get started with evaluation challenges
+          </p>
+        </div>
+
+        <!-- Download Sample Files -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+          <h2 class="text-2xl font-semibold mb-6 text-center">
+            📥 Download Sample Files
+          </h2>
+          <div class="grid md:grid-cols-2 gap-6">
+            <a
+              href="/documentation/samples/ocr challenge.json"
+              download
+              class="download-btn block p-6 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg text-center"
+            >
+              <div class="text-4xl mb-3">📊</div>
+              <h3 class="font-semibold text-lg">Ground Truth Sample</h3>
+              <p class="text-sm opacity-90">OCR Challenge Ground Truth</p>
+              <p class="text-xs opacity-75 mt-2">
+                Contains test data with expected results
+              </p>
+            </a>
+            <a
+              href="/documentation/samples/ocr submission.json"
+              download
+              class="download-btn block p-6 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg text-center"
+            >
+              <div class="text-4xl mb-3">📤</div>
+              <h3 class="font-semibold text-lg">Submission Sample</h3>
+              <p class="text-sm opacity-90">OCR Submission Example</p>
+              <p class="text-xs opacity-75 mt-2">
+                Contains model predictions for evaluation
+              </p>
+            </a>
+          </div>
+        </div>
+
+        <!-- Steps for Creating Challenge -->
+        <div class="bg-white rounded-lg shadow-md p-8 mb-8">
+          <h2 class="text-3xl font-bold text-blue-600 mb-8 text-center">
+            🏆 Creating a Challenge
+          </h2>
+
+          <div class="space-y-8">
+            <!-- Step 1 -->
+            <div class="flex items-start space-x-6">
+              <div class="step-number flex-shrink-0">1</div>
+              <div class="flex-grow">
+                <h3 class="text-xl font-semibold mb-3">
+                  Prepare Your Ground Truth Data
+                </h3>
+                <p class="text-gray-600 mb-4">
+                  Create a JSON file with test cases and expected results. Each
+                  entry should have:
+                </p>
+                <div class="bg-gray-50 p-4 rounded-lg">
+                  <ul
+                    class="list-disc list-inside space-y-2 text-sm text-gray-700"
+                  >
+                    <li>
+                      <strong>filename:</strong> Unique identifier for each test
+                      case
+                    </li>
+                    <li><strong>image_url:</strong> URL to the input image</li>
+                    <li>
+                      <strong>label:</strong> Expected correct output text
+                    </li>
+                    <li>
+                      <strong>source:</strong> Dataset or source information
+                    </li>
+                  </ul>
+                </div>
+                <p class="text-sm text-blue-600 mt-3">
+                  💡 Download the ground truth sample above to see the exact
+                  format
+                </p>
+              </div>
+            </div>
+
+            <!-- Step 2 -->
+            <div class="flex items-start space-x-6">
+              <div class="step-number flex-shrink-0">2</div>
+              <div class="flex-grow">
+                <h3 class="text-xl font-semibold mb-3">
+                  Upload Ground Truth to Cloud Storage
+                </h3>
+                <p class="text-gray-600 mb-4">
+                  Upload your ground truth JSON file to a publicly accessible
+                  URL (AWS S3, Google Cloud, etc.)
+                </p>
+                <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+                  <p class="text-yellow-800 text-sm">
+                    <strong>Important:</strong> The URL must be publicly
+                    accessible for the evaluation system to download it.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 3 -->
+            <div class="flex items-start space-x-6">
+              <div class="step-number flex-shrink-0">3</div>
+              <div class="flex-grow">
+                <h3 class="text-xl font-semibold mb-3">
+                  Create Challenge via API
+                </h3>
+                <p class="text-gray-600 mb-4">
+                  Use the API to create your challenge with these required
+                  fields:
+                </p>
+                <div class="bg-gray-50 p-4 rounded-lg">
+                  <pre class="text-sm text-gray-800">
+POST /challenges/create
+{
+  "title": "Your Challenge Name",
+  "category_id": "uuid-of-existing-category",
+  "ground_truth": "https://your-storage.com/ground-truth.json",
+  "description": "Challenge description",
+  "status": "active"
+}</pre
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Steps for Creating Submission -->
+        <div class="bg-white rounded-lg shadow-md p-8 mb-8">
+          <h2 class="text-3xl font-bold text-green-600 mb-8 text-center">
+            📤 Making a Submission
+          </h2>
+
+          <div class="space-y-8">
+            <!-- Step 1 -->
+            <div class="flex items-start space-x-6">
+              <div class="step-number flex-shrink-0">1</div>
+              <div class="flex-grow">
+                <h3 class="text-xl font-semibold mb-3">
+                  Prepare Your Model Results
+                </h3>
+                <p class="text-gray-600 mb-4">
+                  Create a JSON file with your model's predictions. Format
+                  should match the ground truth but use "prediction" instead of
+                  "label":
+                </p>
+                <div class="bg-gray-50 p-4 rounded-lg">
+                  <ul
+                    class="list-disc list-inside space-y-2 text-sm text-gray-700"
+                  >
+                    <li>
+                      <strong>filename:</strong> Same identifier as in ground
+                      truth
+                    </li>
+                    <li>
+                      <strong>image_url:</strong> Same URL as in ground truth
+                    </li>
+                    <li>
+                      <strong>prediction:</strong> Your model's output text
+                    </li>
+                  </ul>
+                </div>
+                <p class="text-sm text-green-600 mt-3">
+                  💡 Download the submission sample above to see the exact
+                  format
+                </p>
+              </div>
+            </div>
+
+            <!-- Step 2 -->
+            <div class="flex items-start space-x-6">
+              <div class="step-number flex-shrink-0">2</div>
+              <div class="flex-grow">
+                <h3 class="text-xl font-semibold mb-3">
+                  Upload Results to Cloud Storage
+                </h3>
+                <p class="text-gray-600 mb-4">
+                  Upload your submission JSON file to a publicly accessible URL.
+                </p>
+              </div>
+            </div>
+
+            <!-- Step 3 -->
+            <div class="flex items-start space-x-6">
+              <div class="step-number flex-shrink-0">3</div>
+              <div class="flex-grow">
+                <h3 class="text-xl font-semibold mb-3">Submit via API</h3>
+                <p class="text-gray-600 mb-4">
+                  Use the API to submit your results:
+                </p>
+                <div class="bg-gray-50 p-4 rounded-lg">
+                  <pre class="text-sm text-gray-800">
+POST /submissions/create
+{
+  "model_id": "uuid-of-your-model",
+  "challenge_id": "uuid-of-challenge",
+  "description": "Description of your approach",
+  "dataset_url": "https://your-storage.com/submission.json"
+}</pre
+                  >
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 4 -->
+            <div class="flex items-start space-x-6">
+              <div class="step-number flex-shrink-0">4</div>
+              <div class="flex-grow">
+                <h3 class="text-xl font-semibold mb-3">Get Your Results</h3>
+                <p class="text-gray-600 mb-4">
+                  The system will automatically evaluate your submission and
+                  generate scores (WER, CER, etc.)
+                </p>
+                <div class="bg-green-50 border-l-4 border-green-400 p-4">
+                  <p class="text-green-800 text-sm">
+                    <strong>Tip:</strong> Use GET
+                    /results/challenge/{challenge_id} to see all results for a
+                    challenge.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Prerequisites -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+          <h2 class="text-2xl font-bold text-orange-600 mb-6">
+            🔧 Before You Start
+          </h2>
+          <div class="grid md:grid-cols-2 gap-6">
+            <div class="bg-orange-50 p-4 rounded-lg">
+              <h3 class="font-semibold text-orange-800 mb-2">
+                Create Category
+              </h3>
+              <p class="text-sm text-gray-600">
+                POST /categories/create with {"name": "Your Category"}
+              </p>
+            </div>
+            <div class="bg-orange-50 p-4 rounded-lg">
+              <h3 class="font-semibold text-orange-800 mb-2">Register Model</h3>
+              <p class="text-sm text-gray-600">
+                POST /models/create with {"name": "Your Model Name"}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="text-center py-8 text-gray-600">
+          <p>
+            Ready to start? Download the sample files above and check out the
+            <a href="/docs" class="text-blue-600 hover:underline"
+              >API documentation</a
+            >
+            for detailed endpoint information.
+          </p>
+        </footer>
+      </div>
+    </main>
+  </body>
+</html>
