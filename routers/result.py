@@ -2,7 +2,7 @@ from fastapi import APIRouter, status, HTTPException, Depends, Path, Body
 from typing import Annotated, List
 from sqlalchemy.orm import Session
 from database import get_db
-from schemas.result import ResultCreate, ResultRead, ResultReadNested
+from schemas.result import ResultCreate, ResultRead, ResultReadNested, ResultReadWithChallenge
 import uuid
 from models.result import Result
 from models.user import User
@@ -56,6 +56,7 @@ async def get_results_by_challenge(
             'id': submission.id,
             'user_id': submission.user_id,
             'model_id': submission.model_id,
+            'challenge_id': submission.challenge_id,  # Include challenge_id
             'description': submission.description,
             'dataset_url': submission.dataset_url,
             'created_at': submission.created_at,
@@ -80,10 +81,85 @@ async def get_results_by_challenge(
 
 # ************ basic CRUD operations **************
 
-@router.get("", response_model=List[ResultRead])
+@router.get("", response_model=List[ResultReadNested])
 async def list_all_results(db: db_dependency):
+    """Get all results with nested submission and model data including challenge_id"""
     try:
-        return db.query(Result).all()
+        results = db.query(Result).all()
+        
+        nested_results = []
+        for result in results:
+            submission = db.query(Submission).filter(Submission.id == result.submission_id).first()
+            if not submission:
+                continue
+            model = db.query(Model).filter(Model.id == submission.model_id).first()
+            if not model:
+                continue
+            
+            model_data = {
+                'id': model.id,
+                'name': model.name,
+                'created_at': model.created_at,
+                'created_by': model.created_by,
+                'updated_at': model.updated_at,
+                'updated_by': model.updated_by
+            }
+            submission_data = {
+                'id': submission.id,
+                'user_id': submission.user_id,
+                'model_id': submission.model_id,
+                'challenge_id': submission.challenge_id,  # Include challenge_id
+                'description': submission.description,
+                'dataset_url': submission.dataset_url,
+                'created_at': submission.created_at,
+                'updated_at': submission.updated_at,
+                'model': model_data
+            }
+            result_data = {
+                'id': result.id,
+                'type': result.type,
+                'user_id': result.user_id,
+                'submission_id': result.submission_id,
+                'score': result.score,
+                'created_by': result.created_by,
+                'updated_by': result.updated_by,
+                'created_at': result.created_at,
+                'updated_at': result.updated_at,
+                'submission': submission_data
+            }
+            nested_results.append(result_data)
+            
+        return nested_results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/simple", response_model=List[ResultReadWithChallenge])
+async def list_results_with_challenge_id(db: db_dependency):
+    """Get all results with challenge_id included directly (without nested data)"""
+    try:
+        results = db.query(Result).all()
+        
+        results_with_challenge = []
+        for result in results:
+            submission = db.query(Submission).filter(Submission.id == result.submission_id).first()
+            if not submission:
+                continue
+                
+            result_data = {
+                'id': result.id,
+                'type': result.type,
+                'user_id': result.user_id,
+                'submission_id': result.submission_id,
+                'challenge_id': submission.challenge_id,  # Add challenge_id from submission
+                'score': result.score,
+                'created_by': result.created_by,
+                'updated_by': result.updated_by,
+                'created_at': result.created_at,
+                'updated_at': result.updated_at
+            }
+            results_with_challenge.append(result_data)
+            
+        return results_with_challenge
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

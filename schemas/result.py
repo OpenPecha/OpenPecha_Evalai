@@ -30,6 +30,21 @@ class ResultRead(ResultBase):
     class Config:
         from_attributes = True
 
+class ResultReadWithChallenge(BaseModel):
+    id: uuid.UUID
+    type: ResultType
+    user_id: str
+    submission_id: uuid.UUID
+    challenge_id: uuid.UUID
+    score: float
+    created_by: str
+    updated_by: str
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
 # below are for the list of results for the dashboard. nested concepts to send corresponding datas. nested tables are result (submission_id) -> submission (model_id) -> model
 class ModelReadNested(BaseModel):
     id: uuid.UUID
@@ -46,6 +61,7 @@ class SubmissionReadNested(BaseModel):
     id: uuid.UUID
     user_id: str
     model_id: uuid.UUID
+    challenge_id: uuid.UUID
     description: str | None = None
     dataset_url: str | None = None
     created_at: datetime.datetime
