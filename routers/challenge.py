@@ -1,4 +1,5 @@
 from fastapi import APIRouter, status, HTTPException, Depends, Path, Body, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from typing import Annotated, List, Optional
 from sqlalchemy.orm import Session
 from models import Challenge
@@ -11,8 +12,12 @@ from CRUD.ground_truth_upload_s3 import process_ground_truth_file
 from auth import get_current_active_user
 import logging
 import uuid
+import requests
+import io
 from datetime import datetime
 
+# Constants
+CHALLENGE_NOT_FOUND_MESSAGE = "Challenge not found"
 
 router = APIRouter(prefix="/challenges", tags=["challenges"])
 
@@ -37,8 +42,85 @@ async def list_challenges_with_category(db: db_dependency):
 async def get_challenge(db: db_dependency, challenge_id: UUID = Path(..., description="This is the ID of the challenge")):
     challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
     if not challenge:
-        raise HTTPException(status_code=404, detail="Challenge not found")
+        raise HTTPException(status_code=404, detail=CHALLENGE_NOT_FOUND_MESSAGE)
     return challenge
+
+# for downloading ground truth file of a specific challenge
+
+@router.get("/{challenge_id}/download-ground-truth")
+async def download_ground_truth(
+    db: db_dependency, 
+    challenge_id: UUID = Path(..., description="This is the ID of the challenge")
+):
+    """
+    Download the ground truth file for a specific challenge.
+    
+    Returns the ground truth JSON file as a downloadable attachment.
+    """
+    try:
+        # Find the challenge
+        challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+        if not challenge:
+            raise HTTPException(status_code=404, detail=CHALLENGE_NOT_FOUND_MESSAGE)
+        
+        # Check if ground truth URL exists
+        if not challenge.ground_truth:
+            raise HTTPException(
+                status_code=404, 
+                detail="Ground truth file not found for this challenge"
+            )
+        
+        logging.info(f"Downloading ground truth for challenge {challenge_id}: {challenge.ground_truth}")
+        
+        # Download the file from S3 URL
+        try:
+            # Disable SSL verification for S3 URLs to avoid certificate issues with custom bucket names
+            verify_ssl = False if 'amazonaws.com' in challenge.ground_truth else True
+            response = requests.get(challenge.ground_truth, timeout=30, verify=verify_ssl)
+            response.raise_for_status()  # Raises exception for bad status codes
+            
+            # Get file content
+            file_content = response.content
+            
+            # Extract filename from URL or use default
+            filename = f"ground_truth_{challenge.title.replace(' ', '_')}_{challenge_id}.json"
+            if '/' in challenge.ground_truth:
+                url_filename = challenge.ground_truth.split('/')[-1]
+                if url_filename.endswith('.json'):
+                    filename = url_filename
+            
+            # Create a streaming response
+            return StreamingResponse(
+                io.BytesIO(file_content),
+                media_type="application/json",
+                headers={
+                    "Content-Disposition": f"attachment; filename={filename}",
+                    "Content-Length": str(len(file_content))
+                }
+            )
+            
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Failed to download ground truth from S3: {str(e)}")
+            raise HTTPException(
+                status_code=503,
+                detail=f"Failed to download ground truth file: {str(e)}"
+            )
+        except Exception as e:
+            logging.error(f"Unexpected error downloading ground truth: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Internal server error while downloading ground truth: {str(e)}"
+            )
+            
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        logging.error(f"Unexpected error in download_ground_truth endpoint: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
 
 # For creating a new challenge with ground truth file.
 
@@ -145,7 +227,7 @@ async def update_challenge(
         # Find existing challenge
         challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
         if not challenge:
-            raise HTTPException(status_code=404, detail="Challenge not found")
+            raise HTTPException(status_code=404, detail=CHALLENGE_NOT_FOUND_MESSAGE)
         
         # Convert empty strings to None for all optional fields to preserve existing data
         if title == "":
@@ -231,7 +313,7 @@ async def delete_challenge(
         challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
         if not challenge:
             logging.warning(f"Challenge not found for deletion: {challenge_id}")
-            raise HTTPException(status_code=404, detail="Challenge not found")
+            raise HTTPException(status_code=404, detail=CHALLENGE_NOT_FOUND_MESSAGE)
         
         # Check if the current user is the owner of the challenge
         if challenge.created_by != current_user.id:

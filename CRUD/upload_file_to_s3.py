@@ -157,7 +157,13 @@ async def upload_file_to_s3(file: Any, filename: str, user_id: UUID, model_id: U
                 s3_key,
                 ExtraArgs=extra_args
             )
-            file_url = f"https://{os.getenv("S3_BUCKET_NAME")}.s3.{os.getenv("AWS_REGION")}.amazonaws.com/{s3_key}"
+            # Construct the S3 URL - use utility function for better URL generation
+            from .s3_utils import generate_public_s3_url
+            try:
+                file_url = generate_public_s3_url(s3_key)
+            except ValueError:
+                # Fallback to direct URL construction if utils fail
+                file_url = f"https://{os.getenv('S3_BUCKET_NAME')}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{s3_key}"
             
             return True, "Successful", file_url
         except NoCredentialsError:

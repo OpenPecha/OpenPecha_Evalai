@@ -84,8 +84,13 @@ async def ground_truth_upload_s3(file: Any, filename: str, challenge_id: UUID, c
                 ExtraArgs=extra_args
             )
             
-            # Construct the S3 URL
-            file_url = f"https://{os.getenv('S3_BUCKET_NAME')}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{s3_key}"
+            # Construct the S3 URL - use utility function for better URL generation
+            from .s3_utils import generate_public_s3_url
+            try:
+                file_url = generate_public_s3_url(s3_key)
+            except ValueError:
+                # Fallback to direct URL construction if utils fail
+                file_url = f"https://{os.getenv('S3_BUCKET_NAME')}.s3.{os.getenv('AWS_REGION')}.amazonaws.com/{s3_key}"
             
             logger.info(f"Ground truth uploaded successfully: {file_url}")
             return True, "Ground truth uploaded successfully", file_url
