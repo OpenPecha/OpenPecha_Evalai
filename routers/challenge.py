@@ -2,6 +2,7 @@ from fastapi import APIRouter, status, HTTPException, Depends, Path, Body, Uploa
 from fastapi.responses import StreamingResponse
 from typing import Annotated, List, Optional
 from sqlalchemy.orm import Session
+import models
 from models import Challenge
 from models.user import User
 from database import get_db
@@ -323,6 +324,16 @@ async def delete_challenge(
         if current_user.role != 'admin' and challenge.created_by != current_user.id:
             logging.warning(f"User {current_user.id} attempted to delete challenge {challenge_id} owned by {challenge.created_by}")
             raise HTTPException(status_code=403, detail="You can only delete challenges you created")
+        
+        # Check if there are submissions referencing this challenge
+        related_submissions = db.query(models.Submission).filter(models.Submission.challenge_id == challenge_id).all()
+        if related_submissions:
+            submission_count = len(related_submissions)
+            logging.warning(f"Cannot delete challenge {challenge_id}: {submission_count} submissions reference it")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Cannot delete challenge. There are {submission_count} submission(s) that reference this challenge. Please delete all related submissions first."
+            )
         
         challenge_title = challenge.title
         challenge_created_at = challenge.created_at
