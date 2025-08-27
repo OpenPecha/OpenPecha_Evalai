@@ -305,6 +305,10 @@ async def delete_challenge(
     """
     Delete a challenge by ID and return confirmation.
     
+    Authorization rules:
+    - Admin users can delete any challenge
+    - Non-admin users can only delete challenges they created
+    
     Returns a confirmation message with details about the deleted challenge.
     """
     try:
@@ -315,8 +319,8 @@ async def delete_challenge(
             logging.warning(f"Challenge not found for deletion: {challenge_id}")
             raise HTTPException(status_code=404, detail=CHALLENGE_NOT_FOUND_MESSAGE)
         
-        # Check if the current user is the owner of the challenge
-        if challenge.created_by != current_user.id:
+        # Check authorization: admin can delete any challenge, non-admin can only delete their own
+        if current_user.role != 'admin' and challenge.created_by != current_user.id:
             logging.warning(f"User {current_user.id} attempted to delete challenge {challenge_id} owned by {challenge.created_by}")
             raise HTTPException(status_code=403, detail="You can only delete challenges you created")
         

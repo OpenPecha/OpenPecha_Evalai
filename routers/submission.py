@@ -131,13 +131,20 @@ async def delete_submission(
     current_user: User = Depends(get_current_active_user),
     submission_id: uuid.UUID = Path(..., description=SUBMISSION_ID_PATH_DESCRIPTION)
 ):
+    """
+    Delete a submission from the leaderboard.
+    
+    Authorization rules:
+    - Admin users can delete any submission
+    - Non-admin users can only delete their own submissions
+    """
     try:
         submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
         if not submission:
             raise HTTPException(status_code=404, detail=SUBMISSION_NOT_FOUND_MESSAGE)
         
-        # Check if the current user is the owner of the submission
-        if submission.user_id != current_user.id:
+        # Check authorization: admin can delete any submission, non-admin can only delete their own
+        if current_user.role != 'admin' and submission.user_id != current_user.id:
             raise HTTPException(status_code=403, detail="You can only delete your own submissions")
         
         # Database CASCADE will automatically delete related results
