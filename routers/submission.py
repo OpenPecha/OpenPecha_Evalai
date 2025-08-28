@@ -161,12 +161,7 @@ async def delete_submission(
         # Return detailed error information
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": "Failed to delete submission",
-                "message": str(e),
-                "submission_id": str(submission_id),
-                "error_type": type(e).__name__
-            }
+            detail=f"Failed to delete submission {submission_id}: {str(e)}"
         )
 
 # ******** basic endpoints ********
@@ -298,11 +293,7 @@ async def create_submission(
         db.rollback()
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": "Internal server error during submission creation",
-                "message": str(e),
-                "filename": file.filename if file else "unknown"
-            }
+            detail=f"Internal server error during submission creation for file '{file.filename if file else 'unknown'}': {str(e)}"
         )
 
 # ******** Monitoring endpoints ********
