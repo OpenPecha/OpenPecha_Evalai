@@ -8,6 +8,9 @@ from schemas.category import CategoryCreate, CategoryRead, CategoryUpdate
 from auth import get_current_active_user
 from uuid import UUID
 
+# Constants
+CATEGORY_NOT_FOUND_MESSAGE = "Category not found"
+
 router = APIRouter(prefix="/categories", tags=["categories"])
 
 db_dependency = Annotated[Session, Depends(get_db)]
@@ -27,7 +30,7 @@ async def list_all_categories(db: db_dependency):
 async def get_category(db: db_dependency, category_id: UUID = Path(..., description="This is the ID of the category")):
     category = db.query(Category).filter(Category.id == category_id).first()
     if not category:
-        raise HTTPException(status_code=404, detail="Category not found")
+        raise HTTPException(status_code=404, detail=CATEGORY_NOT_FOUND_MESSAGE)
     return category
 
 # for creating new category
@@ -41,6 +44,14 @@ async def create_new_category(
     })
 ):
     try:
+        # Check if category name already exists
+        existing_category = db.query(Category).filter(Category.name == category.name).first()
+        if existing_category:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Category with name '{category.name}' already exists. Please choose a different name."
+            )
+        
         # Add user info from token to the category data
         category_data = category.model_dump()
         category_data['created_by'] = current_user.id
@@ -51,6 +62,9 @@ async def create_new_category(
         db.commit()
         db.refresh(category_instance)
         return category_instance
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is (like the duplicate name check)
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
@@ -65,7 +79,7 @@ async def delete_category(
 ):
     category = db.query(Category).filter(Category.id == category_id).first()
     if not category:
-        raise HTTPException(status_code=404, detail="Category not found")
+        raise HTTPException(status_code=404, detail=CATEGORY_NOT_FOUND_MESSAGE)
     db.delete(category)
     db.commit()
     return {"message": "Category deleted successfully"}
@@ -81,7 +95,7 @@ async def update_category(
 ):
     category = db.query(Category).filter(Category.id == category_id).first()
     if not category:
-        raise HTTPException(status_code=404, detail="Category not found")
+        raise HTTPException(status_code=404, detail=CATEGORY_NOT_FOUND_MESSAGE)
     update_data = category_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(category, field, value)
