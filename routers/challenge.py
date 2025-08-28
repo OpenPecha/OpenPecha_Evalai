@@ -151,6 +151,14 @@ async def create_new_challenge(
     try:
         logging.info(f"Creating new challenge: {title}")
         
+        # Check if challenge title already exists
+        existing_challenge = db.query(Challenge).filter(Challenge.title == title).first()
+        if existing_challenge:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Challenge with title '{title}' already exists. Please choose a different title."
+            )
+        
         # Create challenge instance without ground_truth initially
         challenge_data = {
             "title": title,
