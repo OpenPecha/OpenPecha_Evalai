@@ -632,7 +632,7 @@ def vote_for_model(
 ):
     """
     Submit a 1-5 star rating for a model version.
-    Users can only vote once per model (updates existing vote if already voted).
+    Users can vote multiple times for the same model - each vote counts toward the total.
     """
     try:
         # Get or create model version
@@ -649,28 +649,16 @@ def vote_for_model(
                 score_percentage=float(vote_request.score * 20)  # Convert to percentage
             )
         
-        # Check if user has already voted for this model
-        existing_vote = db.query(Vote).filter(
-            Vote.user_id == current_user.id,
-            Vote.model_version_id == model_version.id
-        ).first()
-        
-        if existing_vote:
-            # Update existing vote
-            existing_vote.score = vote_request.score
-            db.commit()
-            db.refresh(existing_vote)
-        else:
-            # Create new vote
-            new_vote = Vote(
-                user_id=current_user.id,
-                model_version_id=model_version.id,
-                translation_output_id=None,  # Optional field for specific translation output
-                score=vote_request.score
-            )
-            db.add(new_vote)
-            db.commit()
-            db.refresh(new_vote)
+        # Always create a new vote (allow multiple votes per user per model)
+        new_vote = Vote(
+            user_id=current_user.id,
+            model_version_id=model_version.id,
+            translation_output_id=None,  # Optional field for specific translation output
+            score=vote_request.score
+        )
+        db.add(new_vote)
+        db.commit()
+        db.refresh(new_vote)
         
         # Calculate updated statistics
         from sqlalchemy import func
@@ -684,7 +672,7 @@ def vote_for_model(
         score_percentage = (average_score / 5.0) * 100.0
         
         return VoteResponse(
-            message="Vote recorded successfully" if not existing_vote else "Vote updated successfully",
+            message="Vote recorded successfully",
             model_version=model_version.version,
             user_score=vote_request.score,
             average_score=round(average_score, 2),
