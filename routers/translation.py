@@ -779,11 +779,11 @@ def get_leaderboard(db: Session = Depends(get_db)):
 @router.get("/suggest_model", response_model=ModelSuggestionResponse)
 def suggest_model_pair():
     """
-    Suggest two models for comparison ensuring all combinations are covered.
-    Uses only MODEL_PROVIDERS and cycles through all possible pairs systematically.
+    Suggest two random models for comparison from all possible combinations.
+    Uses only MODEL_PROVIDERS and randomly selects from all possible pairs.
     """
     import itertools
-    import time
+    import random
     
     # Get available models from MODEL_PROVIDERS only
     available_models = list(MODEL_PROVIDERS.keys())
@@ -804,20 +804,15 @@ def suggest_model_pair():
         all_combinations.append((combo[0], combo[1]))
         all_combinations.append((combo[1], combo[0]))
     
-    # Use time-based rotation to ensure fair distribution over time
-    # This ensures all combinations get suggested systematically
-    current_minute = int(time.time() // 60)  # Change every minute
-    combination_index = current_minute % len(all_combinations)
-    
-    selected_combination = all_combinations[combination_index]
+    # Randomly select one combination from all possibilities
+    selected_combination = random.choice(all_combinations)
     
     return {
         "model_a": selected_combination[0],
         "model_b": selected_combination[1],
-        "selection_method": "systematic_rotation",
+        "selection_method": "random",
         "total_combinations": len(all_combinations),
-        "current_combination_index": combination_index + 1,
-        "note": f"Systematically cycling through {len(all_combinations)} combinations"
+        "note": f"Randomly selected from {len(all_combinations)} possible combinations"
     }
 
 @router.get("/status")
