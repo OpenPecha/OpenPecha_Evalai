@@ -18,7 +18,11 @@ import json
 import asyncio
 import os
 import time
+import logging
 from sse_starlette import EventSourceResponse
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 # AI Client imports - Python 3.12 compatible
 try:
@@ -43,8 +47,8 @@ router = APIRouter(prefix="/translate", tags=["Translation"])
 
 db_dependency = Depends(get_db)
 
-# Constants
-SYSTEM_PROMPT = "You are a translation engine. Output only the translated text."
+# Constants - System prompt from environment variable
+SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "You are a translation engine. Output only the translated text.")
 
 # Model provider mapping
 MODEL_PROVIDERS = {
@@ -64,6 +68,7 @@ MODEL_PROVIDERS = {
 # Initialize AI clients conditionally
 openai_client = None
 anthropic_client = None
+google_configured = False
 
 if OPENAI_AVAILABLE and os.getenv("OPENAI_API_KEY"):
     openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -73,6 +78,7 @@ if ANTHROPIC_AVAILABLE and os.getenv("ANTHROPIC_API_KEY"):
 
 if GOOGLE_AVAILABLE and os.getenv("GOOGLE_API_KEY"):
     genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+    google_configured = True
 
 def get_or_create_model_version(db: Session, version: str) -> ModelVersion:
     """Get or create a model version in the database"""
@@ -183,12 +189,13 @@ async def call_openai_model(model: str, text: str, prompt: Optional[str] = None)
             if chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
     except Exception as e:
-        yield f"Error: {str(e)}"
+        # Return the actual API error instead of generic message
+        yield f"OpenAI API Error: {str(e)}"
 
 async def call_anthropic_model(model: str, text: str, prompt: Optional[str] = None):
     """Call Anthropic API for translation"""
     if not anthropic_client:
-        yield "Error: Anthropic client not configured"
+        yield "Error: Anthropic client not configured - no API key provided"
         return
         
     user_message = text
@@ -205,21 +212,25 @@ async def call_anthropic_model(model: str, text: str, prompt: Optional[str] = No
             for text_chunk in stream.text_stream:
                 yield text_chunk
     except Exception as e:
-        yield f"Error: {str(e)}"
+        # Return the actual API error instead of generic message
+        yield f"Anthropic API Error: {str(e)}"
 
 async def call_google_model(model: str, text: str, prompt: Optional[str] = None):
     """Call Google Gemini API for translation"""
-    if not GOOGLE_AVAILABLE:
-        yield "Error: Google Generative AI not available"
+    if not google_configured:
+        yield "Error: Google Generative AI not configured - no API key provided"
         return
         
     try:
         # Initialize the model
         google_model = genai.GenerativeModel(model)
         
-        user_message = text
+        # Create the full prompt with system instruction
+        user_message = f"{SYSTEM_PROMPT}\n\n"
         if prompt:
-            user_message = f"Translation instruction: {prompt}\n\nText to translate: {text}"
+            user_message += f"Translation instruction: {prompt}\n\nText to translate: {text}"
+        else:
+            user_message += f"Text to translate: {text}"
         
         # Generate content with streaming
         response = google_model.generate_content(
@@ -227,6 +238,7 @@ async def call_google_model(model: str, text: str, prompt: Optional[str] = None)
             stream=True,
             generation_config=genai.types.GenerationConfig(
                 max_output_tokens=2000,
+                temperature=0.1,  # Low temperature for consistent translations
             )
         )
         
@@ -234,7 +246,8 @@ async def call_google_model(model: str, text: str, prompt: Optional[str] = None)
             if chunk.text:
                 yield chunk.text
     except Exception as e:
-        yield f"Error: {str(e)}"
+        # Return the actual API error instead of generic message
+        yield f"Google API Error: {str(e)}"
 
 async def mock_translation_stream(model: str, text: str, prompt: Optional[str] = None):
     """Mock translation stream for demo purposes"""
@@ -254,23 +267,27 @@ async def mock_translation_stream(model: str, text: str, prompt: Optional[str] =
         yield char
 
 async def stream_translation(model: str, text: str, prompt: Optional[str] = None):
-    """Stream translation from the specified model or fall back to demo"""
+    """Stream translation from the specified model - returns errors if not configured"""
     provider = MODEL_PROVIDERS.get(model, "unknown")
     
-    # Try real AI first if available
-    if provider == "openai" and openai_client:
-        async for chunk in call_openai_model(model, text, prompt):
-            yield chunk
-    elif provider == "anthropic" and anthropic_client:
-        async for chunk in call_anthropic_model(model, text, prompt):
-            yield chunk
-    elif provider == "google" and GOOGLE_AVAILABLE:
-        async for chunk in call_google_model(model, text, prompt):
-            yield chunk
+    # Try real AI - return actual API errors
+    if provider == "openai":
+        if openai_client:
+            async for chunk in call_openai_model(model, text, prompt):
+                yield chunk
+      
+    elif provider == "anthropic":
+        if anthropic_client:
+            async for chunk in call_anthropic_model(model, text, prompt):
+                yield chunk
+      
+    elif provider == "google":
+        if google_configured:
+            async for chunk in call_google_model(model, text, prompt):
+                yield chunk
+      
     else:
-        # Fall back to demo mode
-        async for chunk in mock_translation_stream(model, text, prompt):
-            yield chunk
+        yield f"Configuration Error: Unknown model provider '{provider}' for model '{model}'. Supported providers: openai, anthropic, google"
 
 @router.post("/stream")
 async def translate_text(
@@ -283,8 +300,35 @@ async def translate_text(
     Translate text using the specified model with streaming response.
     For multi-model translation, use model=multi and provide models in request body.
     
-    Falls back to demo mode if AI clients are not configured.
+    Returns errors if AI clients are not configured.
     """
+    
+    # Log credential status when endpoint is triggered
+    logger.info(f"Translation endpoint triggered for model: {model}")
+    logger.info(f"Credential status check:")
+    logger.info(f"  OPENAI_API_KEY exists: {'OPENAI_API_KEY' in os.environ}")
+    logger.info(f"  GOOGLE_API_KEY exists: {'GOOGLE_API_KEY' in os.environ}")
+    logger.info(f"  ANTHROPIC_API_KEY exists: {'ANTHROPIC_API_KEY' in os.environ}")
+    
+    if os.getenv("OPENAI_API_KEY"):
+        logger.info(f"  OPENAI_API_KEY: {os.getenv('OPENAI_API_KEY')[:10]}...")
+    else:
+        logger.info("  OPENAI_API_KEY: Not found")
+        
+    if os.getenv("GOOGLE_API_KEY"):
+        logger.info(f"  GOOGLE_API_KEY: {os.getenv('GOOGLE_API_KEY')[:10]}...")
+    else:
+        logger.info("  GOOGLE_API_KEY: Not found")
+        
+    if os.getenv("ANTHROPIC_API_KEY"):
+        logger.info(f"  ANTHROPIC_API_KEY: {os.getenv('ANTHROPIC_API_KEY')[:10]}...")
+    else:
+        logger.info("  ANTHROPIC_API_KEY: Not found")
+    
+    logger.info(f"Client initialization status:")
+    logger.info(f"  openai_client: {openai_client is not None}")
+    logger.info(f"  anthropic_client: {anthropic_client is not None}")
+    logger.info(f"  google_configured: {google_configured}")
     
     if model == "multi":
         # Handle multi-model translation  
@@ -323,39 +367,55 @@ async def translate_text(
     
     async def generate_stream():
         full_text = ""
+        has_error = False
+        error_message = None
+        
         try:
             async for chunk in stream_translation(model, request.text, request.prompt):
                 full_text += chunk
-                # Send SSE formatted data (EventSourceResponse will add the 'data: ' prefix)
-                yield f"{json.dumps({'chunk': chunk, 'model': model})}\n"
-            
-            # Create new database session for the async context
-            from database import SessionLocal
-            async_db = SessionLocal()
-            try:
-                # Check if we can safely create TranslationOutput (valid foreign key)
-                if model_version_id != "skip_db_operations":
-                    # Create translation output record
-                    output = TranslationOutput(
-                        job_id=job_id,
-                        model_version_id=model_version_id,
-                        streamed_text=full_text
-                    )
-                    async_db.add(output)
-                    async_db.commit()
-                    async_db.refresh(output)
-                    
-                    # Send completion event with output ID
-                    yield f"{json.dumps({'complete': True, 'output_id': str(output.id), 'model': model})}\n"
+                
+                # Check if this chunk is an error message
+                if chunk.startswith("OpenAI API Error:") or chunk.startswith("Anthropic API Error:") or chunk.startswith("Google API Error:") or chunk.startswith("Configuration Error:"):
+                    has_error = True
+                    error_message = chunk
+                    # Send error in structured format
+                    yield f"{json.dumps({'error': chunk, 'model': model, 'error_type': 'api_error'})}\n"
                 else:
-                    # Skip database operations due to missing ModelVersion
-                    # Send completion event without output ID
-                    yield f"{json.dumps({'complete': True, 'model': model, 'note': 'Translation completed but not saved to database'})}\n"
-            finally:
-                async_db.close()
+                    # Send normal chunk
+                    yield f"{json.dumps({'chunk': chunk, 'model': model})}\n"
+            
+            # Only proceed with database operations if no error occurred
+            if not has_error:
+                # Create new database session for the async context
+                from database import SessionLocal
+                async_db = SessionLocal()
+                try:
+                    # Check if we can safely create TranslationOutput (valid foreign key)
+                    if model_version_id != "skip_db_operations":
+                        # Create translation output record
+                        output = TranslationOutput(
+                            job_id=job_id,
+                            model_version_id=model_version_id,
+                            streamed_text=full_text
+                        )
+                        async_db.add(output)
+                        async_db.commit()
+                        async_db.refresh(output)
+                        
+                        # Send completion event with output ID
+                        yield f"{json.dumps({'complete': True, 'output_id': str(output.id), 'model': model})}\n"
+                    else:
+                        # Skip database operations due to missing ModelVersion
+                        # Send completion event without output ID
+                        yield f"{json.dumps({'complete': True, 'model': model, 'note': 'Translation completed but not saved to database'})}\n"
+                finally:
+                    async_db.close()
+            else:
+                # Send error completion event
+                yield f"{json.dumps({'complete': True, 'model': model, 'error': error_message, 'success': False})}\n"
             
         except Exception as e:
-            yield f"{json.dumps({'error': str(e), 'model': model})}\n"
+            yield f"{json.dumps({'error': str(e), 'model': model, 'error_type': 'system_error'})}\n"
     
     return EventSourceResponse(generate_stream())
 
@@ -409,43 +469,65 @@ def translate_multi_model(
         
         async def stream_model(model: str, channel: str):
             full_text = ""
+            has_error = False
+            error_message = None
+            
             try:
                 async for chunk in stream_translation(model, request.text, request.prompt):
                     full_text += chunk
-                    yield f"{json.dumps({'chunk': chunk, 'model': model, 'channel': channel})}\n"
-                
-                # Create new database session for the async context
-                from database import SessionLocal
-                async_db = SessionLocal()
-                try:
-                    # Check if we can safely create TranslationOutput (valid foreign key)
-                    if model_version_ids[model] != "skip_db_operations":
-                        # Create translation output record
-                        output = TranslationOutput(
-                            job_id=job_id,
-                            model_version_id=model_version_ids[model],
-                            streamed_text=full_text
-                        )
-                        async_db.add(output)
-                        async_db.commit()
-                        async_db.refresh(output)
-                        
-                        model_outputs[model] = output.id
-                        completed_models.add(model)
-                        
-                        # Send completion event
-                        yield f"{json.dumps({'complete': True, 'output_id': str(output.id), 'model': model, 'channel': channel})}\n"
+                    
+                    # Check if this chunk is an error message
+                    if chunk.startswith("OpenAI API Error:") or chunk.startswith("Anthropic API Error:") or chunk.startswith("Google API Error:") or chunk.startswith("Configuration Error:"):
+                        has_error = True
+                        error_message = chunk
+                        # Send error in structured format
+                        yield f"{json.dumps({'error': chunk, 'model': model, 'channel': channel, 'error_type': 'api_error'})}\n"
                     else:
-                        # Skip database operations due to missing ModelVersion
-                        completed_models.add(model)
-                        
-                        # Send completion event without output ID
-                        yield f"{json.dumps({'complete': True, 'model': model, 'channel': channel, 'note': 'Translation completed but not saved to database'})}\n"
-                finally:
-                    async_db.close()
+                        # Send normal chunk
+                        yield f"{json.dumps({'chunk': chunk, 'model': model, 'channel': channel})}\n"
+                
+                # Only proceed with database operations if no error occurred
+                if not has_error:
+                    # Create new database session for the async context
+                    from database import SessionLocal
+                    async_db = SessionLocal()
+                    try:
+                        # Check if we can safely create TranslationOutput (valid foreign key)
+                        if model_version_ids[model] != "skip_db_operations":
+                            # Create translation output record
+                            output = TranslationOutput(
+                                job_id=job_id,
+                                model_version_id=model_version_ids[model],
+                                streamed_text=full_text
+                            )
+                            async_db.add(output)
+                            async_db.commit()
+                            async_db.refresh(output)
+                            
+                            model_outputs[model] = output.id
+                            completed_models.add(model)
+                            
+                            # Send completion event
+                            yield f"{json.dumps({'complete': True, 'output_id': str(output.id), 'model': model, 'channel': channel})}\n"
+                        else:
+                            # Skip database operations due to missing ModelVersion
+                            completed_models.add(model)
+                            
+                            # Send completion event without output ID
+                            yield f"{json.dumps({'complete': True, 'model': model, 'channel': channel, 'note': 'Translation completed but not saved to database'})}\n"
+                    finally:
+                        async_db.close()
+                else:
+                    # Mark as completed with error
+                    completed_models.add(model)
+                    
+                    # Send error completion event
+                    yield f"{json.dumps({'complete': True, 'model': model, 'channel': channel, 'error': error_message, 'success': False})}\n"
                 
             except Exception as e:
-                yield f"{json.dumps({'error': str(e), 'model': model, 'channel': channel})}\n"
+                # Mark as completed with system error
+                completed_models.add(model)
+                yield f"{json.dumps({'error': str(e), 'model': model, 'channel': channel, 'error_type': 'system_error'})}\n"
         
         # Create concurrent streams for both models
         model_a, model_b = request.models[0], request.models[1]

@@ -4,7 +4,6 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi import Request
-from routers import user, challenge, submission, result, category, model, file_upload, translation
 from database import create_table
 from submission_cache import start_cache_cleanup
 from submission_worker import start_submission_workers
@@ -14,7 +13,11 @@ from dotenv import load_dotenv
 import os
 from fastapi.middleware.cors import CORSMiddleware
 
+# Load environment variables BEFORE importing routers
 load_dotenv()
+
+# Import routers AFTER loading environment variables
+from routers import user, challenge, submission, result, category, model, file_upload, translation
 
 # Templates setup
 templates = Jinja2Templates(directory="templates")
