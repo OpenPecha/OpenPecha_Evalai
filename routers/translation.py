@@ -344,8 +344,18 @@ async def translate_text(
     logger.info(f"  google_configured: {google_configured}")
     
     if model == "multi":
-        # Handle multi-model translation  
-        multi_request = MultiTranslationRequest(**request.dict(), models=["gpt-4o-mini", "claude-3-5-sonnet-20241022"])
+        # Handle multi-model translation with random model selection
+        import random
+        available_models = list(MODEL_PROVIDERS.keys())
+        
+        if len(available_models) >= 2:
+            # Randomly select 2 different models for comparison
+            selected_models = random.sample(available_models, 2)
+        else:
+            # Fallback if insufficient models
+            selected_models = ["claude-3-5-sonnet-20241022", "gemini-1.5-pro"]
+        
+        multi_request = MultiTranslationRequest(**request.dict(), models=selected_models)
         return translate_multi_model(multi_request, db, current_user)
     
     # Validate model
@@ -769,133 +779,66 @@ def get_leaderboard(db: Session = Depends(get_db)):
 @router.get("/suggest_model", response_model=ModelSuggestionResponse)
 def suggest_model_pair(db: Session = Depends(get_db)):
     """
-    Suggest two model versions for comparison based on weighted random selection.
-    Models with higher vote counts have higher probability of being selected.
+    Suggest two random models for comparison.
+    Any model can be Model A or Model B with equal probability.
     """
     import random
     
     try:
-        # Get all model versions with their average scores (highest first)
-        from sqlalchemy import func
+        # Get available models - first try from database, then from MODEL_PROVIDERS
+        available_models = []
         
-        model_stats = db.query(
-            ModelVersion.version,
-            func.avg(Vote.score).label('avg_score'),
-            func.count(Vote.id).label('total_votes')
-        ).outerjoin(Vote, ModelVersion.id == Vote.model_version_id) \
-         .group_by(ModelVersion.id, ModelVersion.version) \
-         .order_by(func.avg(Vote.score).desc().nullslast()) \
-         .all()
+        try:
+            # Try to get models from database first
+            model_versions = db.query(ModelVersion.version).distinct().all()
+            available_models = [mv.version for mv in model_versions]
+        except Exception:
+            pass
         
-        if len(model_stats) < 2:
-            # Fallback to default models if not enough in database
+        # If no models in database or database error, use MODEL_PROVIDERS
+        if not available_models:
             available_models = list(MODEL_PROVIDERS.keys())
-            if len(available_models) >= 2:
-                selected = random.sample(available_models, 2)
-                return {
-                    "model_a": selected[0],
-                    "model_b": selected[1],
-                    "selection_method": "default_random",
-                    "note": "Using default models (insufficient vote data)"
-                }
-            else:
-                return {
-                    "model_a": "gpt-4o-mini",
-                    "model_b": "claude-3-5-sonnet-latest",
-                    "selection_method": "hardcoded",
-                    "note": "Using hardcoded defaults"
-                }
         
-        # Create weighted probability distribution based on average scores
-        # Higher scored models get exponentially higher weights
-        total_models = len(model_stats)
-        weights = []
-        models = []
+        # Remove any empty or invalid model names
+        available_models = [model for model in available_models if model and model.strip()]
         
-        for i, model_stat in enumerate(model_stats):
-            # Use average score as base weight (1-5), with exponential boost for ranking
-            avg_score = float(model_stat.avg_score) if model_stat.avg_score else 1.0
-            rank = i + 1  # rank starts from 1
+        if len(available_models) < 2:
+            # Fallback if insufficient models
+            fallback_models = ["claude-3-5-sonnet-20241022", "gemini-1.5-pro", "claude-3-5-haiku-20241022"]
+            available_models = [model for model in fallback_models if model in MODEL_PROVIDERS]
+        
+        if len(available_models) >= 2:
+            # Randomly select 2 different models
+            selected = random.sample(available_models, 2)
             
-            # Combine score quality with ranking position
-            # Formula: (average_score ^ 2) * (base ^ (total_models - rank))
-            score_weight = avg_score ** 2  # Square emphasizes higher scores
-            rank_weight = 2.0 ** (total_models - rank + 1)  # Exponential ranking boost
-            weight = score_weight * rank_weight
+            # Randomly assign to A and B (any model can be in either position)
+            model_a, model_b = selected[0], selected[1]
             
-            weights.append(weight)
-            models.append(model_stat.version)
-        
-        # Select two different models using weighted random selection
-        selected_models = []
-        remaining_models = models.copy()
-        remaining_weights = weights.copy()
-        
-        # Select first model
-        first_model = random.choices(remaining_models, weights=remaining_weights, k=1)[0]
-        selected_models.append(first_model)
-        
-        # Remove first model from options and select second
-        first_index = remaining_models.index(first_model)
-        remaining_models.pop(first_index)
-        remaining_weights.pop(first_index)
-        
-        if remaining_models:
-            second_model = random.choices(remaining_models, weights=remaining_weights, k=1)[0]
-            selected_models.append(second_model)
+            return {
+                "model_a": model_a,
+                "model_b": model_b,
+                "selection_method": "random",
+                "total_models_available": len(available_models),
+                "note": f"Randomly selected from {len(available_models)} available models"
+            }
         else:
-            # Fallback if only one model exists
-            selected_models.append(models[0] if len(models) > 1 else "claude-3-5-sonnet-latest")
-        
-        return {
-            "model_a": selected_models[0],
-            "model_b": selected_models[1],
-            "selection_method": "weighted_random",
-            "total_models_considered": total_models
-        }
+            # Absolute fallback
+            return {
+                "model_a": "claude-3-5-sonnet-20241022",
+                "model_b": "gemini-1.5-pro", 
+                "selection_method": "hardcoded",
+                "note": "Using hardcoded defaults (insufficient models available)"
+            }
         
     except Exception as e:
-        # Fallback to database-free selection if Vote table doesn't exist
-        error_str = str(e).lower()
-        if any(phrase in error_str for phrase in [
-            "vote", 
-            "relation", 
-            "table",
-            "does not exist",
-            "undefinedcolumn"
-        ]):
-            try:
-                # Try to get models without vote data
-                model_versions = db.query(ModelVersion).all()
-                if len(model_versions) >= 2:
-                    # Random selection from database models
-                    selected = random.sample([mv.version for mv in model_versions], min(2, len(model_versions)))
-                    return {
-                        "model_a": selected[0],
-                        "model_b": selected[1] if len(selected) > 1 else selected[0],
-                        "selection_method": "random",
-                        "note": "Random selection (5-star voting system not available - create Vote table to enable weighted selection)"
-                    }
-            except Exception:
-                pass
-        
-        # Ultimate fallback: use predefined model list
-        available_models = list(MODEL_PROVIDERS.keys())
-        if len(available_models) >= 2:
-            selected = random.sample(available_models, min(2, len(available_models)))
-            return {
-                "model_a": selected[0],
-                "model_b": selected[1],
-                "selection_method": "fallback_random",
-                "note": "Using default models (database not available)"
-            }
-        else:
-            return {
-                "model_a": "gpt-4o-mini",
-                "model_b": "claude-3-5-sonnet-latest",
-                "selection_method": "hardcoded",
-                "note": "Using hardcoded defaults"
-            }
+        logger.error(f"Error in suggest_model_pair: {str(e)}")
+        # Ultimate fallback
+        return {
+            "model_a": "claude-3-5-sonnet-20241022",
+            "model_b": "gemini-1.5-pro",
+            "selection_method": "error_fallback",
+            "note": f"Error occurred: {str(e)[:100]}"
+        }
 
 @router.get("/status")
 def get_system_status():
