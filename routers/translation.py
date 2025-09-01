@@ -52,17 +52,15 @@ SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "You are a translation engine. Output
 
 # Model provider mapping
 MODEL_PROVIDERS = {
-    "gpt-4o-mini": "openai",
-    "gpt-4o": "openai", 
-    "gpt-4": "openai",
-    "gpt-3.5-turbo": "openai",
-    "gpt-4-turbo": "openai",
+    # "gpt-4o-mini": "openai",
+    # "gpt-4o": "openai", 
+    # "gpt-4": "openai",
+    # "gpt-3.5-turbo": "openai",
     "claude-3-5-sonnet-20241022": "anthropic",
     "claude-3-5-haiku-20241022": "anthropic", 
     "claude-3-opus-20240229": "anthropic",
     "gemini-1.5-pro": "google",
     "gemini-1.5-flash": "google",
-    "gemini-1.0-pro": "google"
 }
 
 # Initialize AI clients conditionally
