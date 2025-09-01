@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = 'c7f8d9e5a2b1'
-down_revision: Union[str, Sequence[str], None] = 'd5b6695b16ca'
+down_revision: Union[str, Sequence[str], None] = '5756120ff3dc'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -28,11 +28,13 @@ def upgrade() -> None:
         sa.Column('model_version_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('score', sa.Integer(), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('NOW()')),
+        sa.Column('translation_output_id', postgresql.UUID(as_uuid=True), nullable=True),
         
         # Constraints
         sa.CheckConstraint('score >= 1 AND score <= 5', name='valid_score_range'),
         sa.UniqueConstraint('user_id', 'model_version_id', name='unique_user_model_vote'),
         sa.ForeignKeyConstraint(['model_version_id'], ['model_version.id'], name='fk_vote_model_version', ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['translation_output_id'], ['translation_output.id'], name='fk_vote_translation_output', ondelete='SET NULL'),
         sa.PrimaryKeyConstraint('id', name='vote_pkey')
     )
     
@@ -41,12 +43,14 @@ def upgrade() -> None:
     op.create_index('idx_vote_model_version_id', 'vote', ['model_version_id'])
     op.create_index('idx_vote_score', 'vote', ['score'])
     op.create_index('idx_vote_created_at', 'vote', ['created_at'])
+    op.create_index('idx_vote_translation_output_id', 'vote', ['translation_output_id'])
 
 
 def downgrade() -> None:
     """Downgrade schema - Remove Vote table."""
     
     # Drop indexes
+    op.drop_index('idx_vote_translation_output_id', 'vote')
     op.drop_index('idx_vote_created_at', 'vote')
     op.drop_index('idx_vote_score', 'vote')
     op.drop_index('idx_vote_model_version_id', 'vote')
