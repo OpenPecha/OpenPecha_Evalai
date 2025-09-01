@@ -4,7 +4,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi import Request
-from routers import user, challenge, submission, result, category, model, file_upload
+from routers import user, challenge, submission, result, category, model, file_upload, translation
 from database import create_table
 from submission_cache import start_cache_cleanup
 from submission_worker import start_submission_workers
@@ -162,6 +162,7 @@ app.include_router(model.router)
 app.include_router(challenge.router)
 app.include_router(submission.router)
 app.include_router(result.router)
+app.include_router(translation.router)
 app.include_router(file_upload.router) # for testing. you can comment out.
 
 
