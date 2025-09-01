@@ -78,6 +78,21 @@ if GOOGLE_AVAILABLE and os.getenv("GOOGLE_API_KEY"):
     genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
     google_configured = True
 
+def find_cached_translation(db: Session, text: str, model_version_id, prompt: Optional[str] = None) -> Optional[TranslationOutput]:
+    """Find existing translation output for the same input, model, and prompt"""
+    try:
+        # Find translation outputs for jobs with the same text, prompt, and model version
+        existing_output = db.query(TranslationOutput).join(TranslationJob).filter(
+            TranslationJob.source_text == text,
+            TranslationJob.prompt == prompt,
+            TranslationOutput.model_version_id == model_version_id
+        ).order_by(TranslationOutput.created_at.desc()).first()  # Get the most recent one
+        
+        return existing_output
+    except Exception as e:
+        logger.warning(f"Error checking for cached translation: {str(e)}")
+        return None
+
 def get_or_create_model_version(db: Session, version: str) -> ModelVersion:
     """Get or create a model version in the database"""
     try:
@@ -363,6 +378,28 @@ async def translate_text(
         # This prevents foreign key constraint violations
         model_version_id = "skip_db_operations"  # Special marker
     
+    # Check for cached translation before making API call
+    cached_output = None
+    if model_version_id != "skip_db_operations":
+        cached_output = find_cached_translation(db, request.text, model_version_id, request.prompt)
+        
+    if cached_output:
+        logger.info(f"Found cached translation for model {model}, returning cached result")
+        
+        # Return cached result as streaming response
+        async def generate_cached_stream():
+            cached_text = cached_output.streamed_text
+            
+            # Stream the cached text character by character to simulate real streaming
+            for char in cached_text:
+                yield f"{json.dumps({'chunk': char, 'model': model, 'cached': True})}\n"
+                await asyncio.sleep(0.01)  # Small delay to simulate streaming
+            
+            # Send completion event with existing output ID
+            yield f"{json.dumps({'complete': True, 'output_id': str(cached_output.id), 'model': model, 'cached': True})}\n"
+        
+        return EventSourceResponse(generate_cached_stream())
+    
     async def generate_stream():
         full_text = ""
         has_error = False
@@ -442,9 +479,11 @@ def translate_multi_model(
     db.commit()
     db.refresh(job)
     
-    # Get or create model versions
+    # Get or create model versions and check for cached translations
     model_versions = {}
     model_version_ids = {}
+    cached_outputs = {}
+    
     for model in request.models:
         model_version = get_or_create_model_version(db, model)
         model_versions[model] = model_version
@@ -457,6 +496,13 @@ def translate_multi_model(
             model_version_id = "skip_db_operations"  # Special marker
         
         model_version_ids[model] = model_version_id
+        
+        # Check for cached translation for this model
+        if model_version_id != "skip_db_operations":
+            cached_output = find_cached_translation(db, request.text, model_version_id, request.prompt)
+            if cached_output:
+                cached_outputs[model] = cached_output
+                logger.info(f"Found cached translation for model {model} in multi-model request")
     
     # Store job ID to avoid session issues
     job_id = job.id
@@ -469,6 +515,24 @@ def translate_multi_model(
             full_text = ""
             has_error = False
             error_message = None
+            
+            # Check if we have cached result for this model
+            if model in cached_outputs:
+                cached_output = cached_outputs[model]
+                cached_text = cached_output.streamed_text
+                
+                # Stream the cached text character by character
+                for char in cached_text:
+                    yield f"{json.dumps({'chunk': char, 'model': model, 'channel': channel, 'cached': True})}\n"
+                    await asyncio.sleep(0.01)  # Small delay to simulate streaming
+                
+                # Mark as completed and add to outputs
+                model_outputs[model] = cached_output.id
+                completed_models.add(model)
+                
+                # Send completion event for cached result
+                yield f"{json.dumps({'complete': True, 'output_id': str(cached_output.id), 'model': model, 'channel': channel, 'cached': True})}\n"
+                return
             
             try:
                 async for chunk in stream_translation(model, request.text, request.prompt):
