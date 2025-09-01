@@ -777,68 +777,48 @@ def get_leaderboard(db: Session = Depends(get_db)):
             return LeaderboardResponse(leaderboard=[])
 
 @router.get("/suggest_model", response_model=ModelSuggestionResponse)
-def suggest_model_pair(db: Session = Depends(get_db)):
+def suggest_model_pair():
     """
-    Suggest two random models for comparison.
-    Any model can be Model A or Model B with equal probability.
+    Suggest two models for comparison ensuring all combinations are covered.
+    Uses only MODEL_PROVIDERS and cycles through all possible pairs systematically.
     """
-    import random
+    import itertools
+    import time
     
-    try:
-        # Get available models - first try from database, then from MODEL_PROVIDERS
-        available_models = []
-        
-        try:
-            # Try to get models from database first
-            model_versions = db.query(ModelVersion.version).distinct().all()
-            available_models = [mv.version for mv in model_versions]
-        except Exception:
-            pass
-        
-        # If no models in database or database error, use MODEL_PROVIDERS
-        if not available_models:
-            available_models = list(MODEL_PROVIDERS.keys())
-        
-        # Remove any empty or invalid model names
-        available_models = [model for model in available_models if model and model.strip()]
-        
-        if len(available_models) < 2:
-            # Fallback if insufficient models
-            fallback_models = ["claude-3-5-sonnet-20241022", "gemini-1.5-pro", "claude-3-5-haiku-20241022"]
-            available_models = [model for model in fallback_models if model in MODEL_PROVIDERS]
-        
-        if len(available_models) >= 2:
-            # Randomly select 2 different models
-            selected = random.sample(available_models, 2)
-            
-            # Randomly assign to A and B (any model can be in either position)
-            model_a, model_b = selected[0], selected[1]
-            
-            return {
-                "model_a": model_a,
-                "model_b": model_b,
-                "selection_method": "random",
-                "total_models_available": len(available_models),
-                "note": f"Randomly selected from {len(available_models)} available models"
-            }
-        else:
-            # Absolute fallback
-            return {
-                "model_a": "claude-3-5-sonnet-20241022",
-                "model_b": "gemini-1.5-pro", 
-                "selection_method": "hardcoded",
-                "note": "Using hardcoded defaults (insufficient models available)"
-            }
-        
-    except Exception as e:
-        logger.error(f"Error in suggest_model_pair: {str(e)}")
-        # Ultimate fallback
+    # Get available models from MODEL_PROVIDERS only
+    available_models = list(MODEL_PROVIDERS.keys())
+    
+    if len(available_models) < 2:
+        # Fallback if insufficient models
         return {
             "model_a": "claude-3-5-sonnet-20241022",
             "model_b": "gemini-1.5-pro",
-            "selection_method": "error_fallback",
-            "note": f"Error occurred: {str(e)[:100]}"
+            "selection_method": "fallback",
+            "note": "Insufficient models in MODEL_PROVIDERS"
         }
+    
+    # Generate all possible combinations (A,B) and (B,A) to ensure fairness
+    all_combinations = []
+    for combo in itertools.combinations(available_models, 2):
+        # Add both (A,B) and (B,A) to ensure every model can be in either position
+        all_combinations.append((combo[0], combo[1]))
+        all_combinations.append((combo[1], combo[0]))
+    
+    # Use time-based rotation to ensure fair distribution over time
+    # This ensures all combinations get suggested systematically
+    current_minute = int(time.time() // 60)  # Change every minute
+    combination_index = current_minute % len(all_combinations)
+    
+    selected_combination = all_combinations[combination_index]
+    
+    return {
+        "model_a": selected_combination[0],
+        "model_b": selected_combination[1],
+        "selection_method": "systematic_rotation",
+        "total_combinations": len(all_combinations),
+        "current_combination_index": combination_index + 1,
+        "note": f"Systematically cycling through {len(all_combinations)} combinations"
+    }
 
 @router.get("/status")
 def get_system_status():
